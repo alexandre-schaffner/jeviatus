@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jev plays OpenFront</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --surface: oklch(0.17 0.012 255 / 0.94);
+    --raise: oklch(1 0 0 / 0.05);
+    --line: oklch(1 0 0 / 0.09);
+    --text: oklch(0.93 0.008 255);
+    --muted: oklch(0.72 0.015 255);
+    --faint: oklch(0.58 0.015 255);
+    --bar: oklch(0.38 0.02 255);
+    --pick: oklch(0.8 0.13 170);
+    --hold: oklch(0.82 0.13 75);
+    --gate: oklch(0.74 0.12 262);
+    --danger: oklch(0.72 0.16 22);
+    --ease: cubic-bezier(0.25, 1, 0.5, 1);
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: oklch(0.12 0.01 255); color: var(--text); font: 12px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--gate); outline-offset: 2px; border-radius: 4px; }
+
+  /* Harness mode: the spectated game fills the window behind the panel. */
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; }
+  #waiting { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px; }
+
+  #panel { position: fixed; top: 12px; right: 12px; width: 360px; max-height: calc(100vh - 24px); overflow-y: auto; overscroll-behavior: contain; background: var(--surface); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: var(--radius); scrollbar-width: thin; scrollbar-color: var(--bar) transparent; }
+  #content { padding: 10px 12px 10px; }
+  body.collapsed #panel { display: none; }
+
+  /* Header: who, what state, and the two controls. */
+  #panelhead { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--faint); }
+  [data-tone="ok"] .dot, .dot[data-tone="ok"] { background: var(--pick); box-shadow: 0 0 0 3px oklch(0.8 0.13 170 / 0.18); }
+  [data-tone="warn"] .dot, .dot[data-tone="warn"] { background: var(--hold); }
+  [data-tone="error"] .dot, .dot[data-tone="error"] { background: var(--danger); }
+  .who { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+  .who strong { font-size: 13px; font-weight: 650; }
+  #state { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  [data-tone="error"] #state { color: var(--danger); }
+  [data-tone="warn"] #state { color: var(--hold); }
+  #statedetail { margin: 3px 0 0 16px; color: var(--muted); }
+  #statedetail:empty { display: none; }
+
+  .switch { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--muted); user-select: none; }
+  .switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch i { position: relative; width: 28px; height: 16px; border-radius: 999px; background: oklch(0.42 0.015 255); transition: background 0.15s var(--ease); }
+  .switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: white; transition: transform 0.15s var(--ease); }
+  .switch input:checked + i { background: oklch(0.55 0.11 170); }
+  .switch input:checked + i::after { transform: translateX(12px); }
+  .switch input:focus-visible + i { outline: 2px solid var(--gate); outline-offset: 2px; }
+  .switch:hover i { background: oklch(0.48 0.015 255); }
+  .switch:hover input:checked + i { background: oklch(0.6 0.11 170); }
+  .switch b { font-weight: 600; min-width: 20px; }
+  .switch input:checked ~ b { color: var(--pick); }
+
+  .iconbtn { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+  .iconbtn:hover { background: var(--raise); color: var(--text); }
+  .iconbtn:active { background: oklch(1 0 0 / 0.09); }
+
+  /* Stop conditions and warnings: what happened, then how to fix it. */
+  #notice { margin-top: 9px; padding: 8px 10px; border-radius: 8px; background: oklch(0.72 0.16 22 / 0.12); border: 1px solid oklch(0.72 0.16 22 / 0.35); }
+  #notice[data-tone="warn"] { background: oklch(0.82 0.13 75 / 0.1); border-color: oklch(0.82 0.13 75 / 0.3); }
+  #notice p { margin: 0; line-height: 1.45; }
+  .hint { display: flex; align-items: flex-start; gap: 6px; margin-top: 7px; }
+  .hint code { flex: 1; min-width: 0; padding: 4px 7px; border-radius: 6px; background: oklch(0 0 0 / 0.35); font: 11px/1.4 ui-monospace, "SF Mono", Menlo, monospace; user-select: all; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .hint button { flex: none; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--raise); cursor: pointer; }
+  .hint button:hover { background: oklch(1 0 0 / 0.1); }
+
+  #empty { margin-top: 10px; padding: 10px 0 2px; border-top: 1px solid var(--line); color: var(--muted); }
+
+  /* One block per agent. */
+  .agent { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .meta { color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .name { font-weight: 600; color: var(--muted); font-size: 11px; }
+  .action { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+  .pill { padding: 3px 9px; border-radius: 999px; font-weight: 650; font-size: 12px; letter-spacing: 0.01em; background: oklch(0.8 0.13 170 / 0.16); color: var(--pick); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .pill.hold { background: oklch(0.82 0.13 75 / 0.15); color: var(--hold); }
+  .why { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .intents { list-style: none; margin: 6px 0 0; padding: 0; }
+  .intents li { display: flex; gap: 6px; margin: 2px 0; }
+  .intents li::before { content: "→"; color: var(--pick); }
+  .intents li.no { color: var(--faint); }
+  .intents li.no::before { content: "×"; color: var(--faint); }
+  .intents li.no span:first-child { text-decoration: line-through; }
+
+  .vitals { display: grid; grid-template-columns: repeat(4, 1fr); margin: 9px 0 2px; }
+  .vital { padding: 0 8px; border-left: 1px solid var(--line); }
+  .vital:first-child { padding-left: 0; border-left: 0; }
+  .vital b { display: block; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .vital span { color: var(--muted); font-size: 11px; white-space: nowrap; }
+
+  .section { margin-top: 10px; }
+  .label { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
+  .label .aside { font-weight: 400; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .tag { font-size: 10px; font-weight: 500; color: var(--faint); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+  .tag.gate { color: var(--gate); border-color: oklch(0.74 0.12 262 / 0.4); }
+
+  .bar { display: grid; grid-template-columns: 1fr 34px; align-items: center; gap: 6px; margin: 2px 0; }
+  .track { position: relative; height: 18px; border-radius: 5px; background: var(--raise); overflow: hidden; }
+  .fill { position: absolute; inset: 0 auto 0 0; background: var(--bar); border-radius: 5px; transition: width 0.25s var(--ease); }
+  .bar.chosen .fill { background: oklch(0.8 0.13 170 / 0.45); }
+  .bar.chosen.held .fill { background: oklch(0.82 0.13 75 / 0.45); }
+  .bar.hot .fill { background: oklch(0.72 0.16 22 / 0.5); }
+  .bar .opt { position: relative; padding: 0 7px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .bar.chosen .pct { color: var(--text); font-weight: 600; }
+
+  .gauge { position: relative; height: 6px; border-radius: 3px; background: var(--raise); }
+  .gauge .fill { background: var(--gate); border-radius: 3px; }
+  .gauge .fill.low { background: var(--hold); }
+  .gauge .mark { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--text); opacity: 0.7; }
+
+  details.more { margin-top: 10px; }
+  details.more > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--muted); font-weight: 600; font-size: 11px; list-style: none; padding: 3px 0; border-radius: 4px; }
+  details.more > summary::-webkit-details-marker { display: none; }
+  details.more > summary:hover { color: var(--text); }
+  details.more > summary svg { transition: transform 0.15s var(--ease); }
+  details.more[open] > summary svg { transform: rotate(90deg); }
+  .spec { color: var(--muted); margin: 2px 0; }
+  .spec b { color: var(--text); font-weight: 500; }
+  ul.log { margin: 0; padding: 0; list-style: none; }
+  ul.log li { margin: 2px 0; }
+  ul.log .t { display: inline-block; min-width: 30px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); }
+  #agents.stale { opacity: 0.45; }
+  .calls { margin-top: 8px; color: var(--faint); font-size: 11px; }
+
+  #build { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+  #build:empty { display: none; }
+
+  /* Collapsed: a chip that still reports state. */
+  #chip { display: none; position: fixed; top: 12px; right: 12px; align-items: center; gap: 7px; height: 34px; padding: 0 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; font-weight: 600; white-space: nowrap; }
+  #chip:hover { background: oklch(0.21 0.012 255 / 0.96); }
+  #chip span:last-child { color: var(--muted); font-weight: 500; overflow: hidden; text-overflow: ellipsis; max-width: 70px; }
+  body.collapsed #chip { display: inline-flex; }
+
+  /* In-page mode: the overlay is an extension iframe inside the game page, so
+     there is no game iframe or waiting screen. The host sizes the frame to the
+     height we report; collapsed, it shrinks to the chip. */
+  body.inpage { background: transparent; }
+  body.inpage #game, body.inpage #waiting { display: none; }
+  body.inpage #panel { top: 0; right: 0; left: 0; width: auto; max-height: 100vh; }
+  body.inpage #chip { top: 1px; right: 1px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="waiting">Waiting for the game to start…</div>
+<iframe id="game" allow="autoplay; fullscreen" hidden></iframe>
+<button id="chip" type="button" data-tone="idle" aria-label="Show Jev panel"><span class="dot"></span><span>Jev</span><span id="chipstate"></span></button>
+<div id="panel" role="complementary" aria-label="Jev decisions">
+  <div id="content">
+    <div id="statusblock" data-tone="idle">
+      <div id="panelhead">
+        <span class="dot"></span>
+        <div class="who"><strong>Jev</strong><span id="state" aria-live="polite">Connecting</span></div>
+        <label class="switch" id="enablewrap" hidden><input id="enabled" type="checkbox" /><i></i><b id="enabledlabel">Off</b></label>
+        <button class="iconbtn" id="collapse" type="button" aria-label="Collapse panel" title="Collapse">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg>
+        </button>
+      </div>
+      <div id="statedetail"></div>
+    </div>
+    <div id="notice" hidden role="alert">
+      <p id="noticetext"></p>
+      <div class="hint" id="hint" hidden><code id="hintcode"></code><button type="button" id="copyhint">Copy</button></div>
+    </div>
+    <div id="empty">Decisions appear here once Jev starts playing.</div>
+    <div id="agents"></div>
+    <div id="build"></div>
+  </div>
+</div>
+<script src="overlay.js"></script>
+</body>
+</html>

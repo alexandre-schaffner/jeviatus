@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023", "DOM"],
+    "types": ["bun"],
+    "paths": {
+      "src/*": ["./vendor/OpenFrontIO/src/*"],
+      "resources/*": ["./vendor/OpenFrontIO/resources/*"]
+    },
+    "resolveJsonModule": true,
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "strict": true,
+    "strictPropertyInitialization": false,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "extension/**/*",
+    "harness/**/*",
+    "scripts/**/*",
+    "tests/**/*",
+    "vendor/OpenFrontIO/src/client/vite-env.d.ts"
+  ]
+}

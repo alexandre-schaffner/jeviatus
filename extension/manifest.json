@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "Jev for OpenFront",
+  "version": "0.2.0",
+  "description": "Runs the Jev strategy engine in OpenFront matches on openfront.io and local dev servers.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://api.typesafe.ai/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Jev for OpenFront",
+    "default_popup": "popup.html"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["overlay.html", "overlay.js"],
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "https://openfront.io/*",
+        "https://*.openfront.io/*"
+      ]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "https://openfront.io/*",
+        "https://*.openfront.io/*"
+      ],
+      "js": ["hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "https://openfront.io/*",
+        "https://*.openfront.io/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+# Vendored OpenFront needs legacy class-field semantics; see harness/preload.ts.
+preload = ["./harness/preload.ts"]
+
+[test]
+preload = ["./harness/preload.ts"]

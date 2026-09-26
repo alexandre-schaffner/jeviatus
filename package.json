@@ -1,0 +1,22 @@
+{
+  "name": "jeviatus",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "git submodule update --init --recursive && cd vendor/OpenFrontIO && npm run inst",
+    "server": "cd vendor/OpenFrontIO && npm run dev",
+    "play": "bun harness/cli.ts",
+    "build:extension": "bun scripts/build-extension.ts",
+    "pin:openfront": "bun scripts/pin-openfront.ts",
+    "test": "bun test tests/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@typesafe-ai/sdk": "0.6.0",
+    "esbuild": "0.28.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "6.0.3"
+  }
+}
