@@ -1,0 +1,18 @@
+{
+  "snapshot": {
+    "space": "",
+    "hub": "https://hub.snapshot.org",
+    "sequencer": "https://seq.snapshot.org",
+    "rpc": "https://rpc.snapshot.org",
+    "ui": "https://snapshot.org",
+    "votingDays": 5
+  },
+  "forum": {
+    "url": "",
+    "category": "strategy",
+    "categoryId": null
+  },
+  "site": "",
+  "repo": "alexandre-schaffner/jeviatus",
+  "branch": "main"
+}

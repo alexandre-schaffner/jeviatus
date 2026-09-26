@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Decision tree editor · Jeviatus DAO</title>
+  <meta name="description" content="Reword the questions and hints Jev reads, preview the exact change, then take it to the forum and a Snapshot vote, without writing code." />
+  <meta name="theme-color" content="#0b0b0b" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:ital,wdth,wght@0,50..150,100..900;1,50..150,100..900&family=Geist+Mono:wght@400..600&display=swap" />
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./editor.css" />
+</head>
+<body class="ed">
+  <a class="skip" href="#editor">Skip to the editor</a>
+
+  <header class="ed-top">
+    <a class="brand" href="./" aria-label="Jeviatus DAO home">
+      <svg class="mark" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 2h6v4h4v6h-4v6H4v-6H2V6h4z"/></svg>
+      <span>Jeviatus</span><span class="brand-dao">DAO</span>
+    </a>
+    <p class="ed-top-title">Decision tree editor</p>
+    <ul class="ed-status-row" aria-label="Governance status">
+      <li class="ed-pill" data-status-forum>Forum</li>
+      <li class="ed-pill" data-status-vote>Voting</li>
+    </ul>
+    <a class="ed-top-link" href="./#propose">How proposals work</a>
+  </header>
+
+  <main>
+    <section class="ed-intro">
+      <h1>Rewrite how Jev thinks</h1>
+      <p>Pick a decision in the tree, reword the question or the hints Jev weighs, then take it to the forum and to a vote. You write English; the editor turns it into the exact change to the code.</p>
+      <p class="ed-stale" data-stale hidden>This draft was started on an older version of Jev's prompts. The editor flags any hint that changed since then; if it flags yours, start over.</p>
+    </section>
+
+    <figure class="ed-tree">
+      <svg class="tree-svg" data-tree viewBox="0 0 1280 690" role="group" aria-label="Jev's decision tree: select a decision to edit it"></svg>
+      <figcaption>Select a decision to edit it. <span class="ed-legend is-edited">edited</span><span class="ed-legend is-selected">selected</span></figcaption>
+    </figure>
+
+    <div class="ed-main">
+      <nav class="ed-list" aria-label="Every decision">
+        <label class="ed-search">
+          <span class="sr-only">Find a decision</span>
+          <input type="search" placeholder="Find a decision" data-search />
+        </label>
+        <div data-list></div>
+      </nav>
+
+      <section class="ed-edit" id="editor" data-editor tabindex="-1" aria-live="polite"></section>
+
+      <aside class="ed-proposal" data-proposal aria-labelledby="proposal-title">
+        <h2 id="proposal-title">Your proposal</h2>
+        <p class="ed-count" data-count>No changes yet</p>
+
+        <div class="ed-field">
+          <label class="ed-label" for="p-title">Title</label>
+          <input id="p-title" maxlength="120" data-p="title" placeholder="e.g. Stop attacking players twice my size" />
+        </div>
+        <div class="ed-field">
+          <label class="ed-label" for="p-why">Why this helps Jev</label>
+          <textarea id="p-why" rows="4" maxlength="4000" data-p="why" placeholder="What did you see Jev do, and what should it do instead?"></textarea>
+        </div>
+
+        <div class="ed-tabs" role="tablist" aria-label="Preview">
+          <button type="button" role="tab" data-tab="plain" aria-selected="true">Plain English</button>
+          <button type="button" role="tab" data-tab="code" aria-selected="false">Exact change</button>
+        </div>
+        <div class="ed-preview" data-preview></div>
+        <div class="ed-needs" data-needs></div>
+
+        <ol class="ed-steps">
+          <li>
+            <h3>Discuss it</h3>
+            <p class="ed-note" data-forum-note></p>
+            <button type="button" class="btn btn-ghost" data-action="forum">Start a forum thread<span class="arrow" aria-hidden="true">↗</span></button>
+            <div class="ed-field">
+              <label class="ed-label" for="p-discussion">Thread link</label>
+              <input id="p-discussion" type="url" data-p="discussion" placeholder="https://…/t/your-thread" />
+            </div>
+          </li>
+          <li>
+            <h3>Put it to a vote</h3>
+            <p class="ed-note">Token holders vote on Snapshot, and each wallet's vote counts in proportion to its tokens. Publishing only asks for a signature, which costs no gas and sends no transaction.</p>
+            <div data-vote></div>
+          </li>
+          <li>
+            <h3>After the vote</h3>
+            <p class="ed-note">If it passes, a bot opens a pull request with exactly this change. A maintainer reviews and approves it, and Jev plays with it from the next game.</p>
+          </li>
+        </ol>
+
+        <div class="ed-secondary">
+          <button type="button" class="ed-link" data-action="copy">Copy proposal</button>
+          <button type="button" class="ed-link" data-action="download">Download the change</button>
+          <button type="button" class="ed-link" data-action="reset">Start over</button>
+        </div>
+        <p class="ed-note ed-dev">Developer? You can also <a data-edit href="https://github.com/alexandre-schaffner/jeviatus">edit questions.ts on GitHub</a> and open a pull request directly.</p>
+      </aside>
+    </div>
+  </main>
+
+  <script type="module" src="./editor.ts"></script>
+</body>
+</html>

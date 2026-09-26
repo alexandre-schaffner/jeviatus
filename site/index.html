@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jeviatus DAO · Jev plays OpenFront on prompts anyone can rewrite</title>
+  <meta name="description" content="Jev is an open AI player for OpenFront. Every decision comes from plain-English prompts that anyone can rewrite and put to a DAO vote." />
+  <meta name="theme-color" content="#0b0b0b" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Jeviatus DAO · Jev plays OpenFront on prompts anyone can rewrite" />
+  <meta property="og:description" content="An open AI player for OpenFront. Anyone can rewrite the plain-English prompts behind its decisions and put the change to a vote." />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:ital,wdth,wght@0,50..150,100..900;1,50..150,100..900&family=Geist+Mono:wght@400..600&display=swap" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="progress" aria-hidden="true"><span></span></div>
+
+  <header class="nav" data-nav>
+    <a class="brand" href="#top" aria-label="Jeviatus DAO, back to top">
+      <svg class="mark" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 2h6v4h4v6h-4v6H4v-6H2V6h4z"/></svg>
+      <span>Jeviatus</span><span class="brand-dao">DAO</span>
+    </a>
+    <nav aria-label="Sections">
+      <a href="#tree">Decision tree</a>
+      <a href="#questions">Questions</a>
+      <a href="#levers">Levers</a>
+      <a href="#propose">Propose</a>
+      <a href="#govern">Govern</a>
+    </nav>
+    <a class="btn btn-small" href="./editor.html">Open the editor</a>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="hero-map" data-hero-map>
+        <canvas data-map aria-hidden="true"></canvas>
+      </div>
+      <div class="hero-shade" aria-hidden="true"></div>
+      <div class="hero-copy">
+        <h1 class="hero-title" data-hero-title>
+          <span class="line"><span class="line-inner">Jev plays OpenFront</span></span>
+          <span class="line"><span class="line-inner">on prompts</span></span>
+          <span class="line"><span class="line-inner"><em>anyone can rewrite.</em></span></span>
+        </h1>
+        <p class="lede" data-hero-fade>Jeviatus is an open AI player for OpenFront, the real-time territory game. Every move comes from plain-English prompts: change one in the editor, argue it on the forum and put it to a vote, without writing code.</p>
+        <div class="cta-row" data-hero-fade>
+          <a class="btn btn-jev" href="#tree">Walk the decision tree</a>
+          <a class="btn btn-ghost" href="./editor.html">Open the editor</a>
+        </div>
+      </div>
+      <aside class="hud" data-hud aria-label="Simulated match">
+        <p class="hud-row"><span class="hud-dot" aria-hidden="true"></span><span data-hud-game>game 01</span><span class="hud-sep">·</span><span>Jev holds <b data-hud-share>0%</b> of the land</span></p>
+        <p class="hud-row hud-step"><span class="hud-key">step</span><span data-hud-step>spawn_site → S4</span></p>
+        <p class="hud-note">Simulated map. Real games run on openfront.io.</p>
+      </aside>
+      <a class="scroll-cue" href="#thesis" aria-label="Scroll to the next section"><span></span></a>
+    </section>
+
+    <section class="thesis" id="thesis">
+      <p class="thesis-text" data-thesis>
+        Every <span data-src="interval">1.5 seconds</span> the harness freezes the game into one state object and asks Jev a batch of typed questions in plain English: which route, which target, how many troops, accept this alliance or refuse it. The wording of those questions is Jev's strategy, and anyone can change it, whether or not they write code.
+      </p>
+      <a class="file-link" data-file href="https://github.com/alexandre-schaffner/jeviatus/blob/main/harness/decide/questions.ts"><span class="file-glyph" aria-hidden="true">{ }</span>harness/decide/questions.ts</a>
+    </section>
+
+    <section class="tree" id="tree" aria-labelledby="tree-title">
+      <header class="section-head">
+        <h2 id="tree-title">One step of Jev's mind</h2>
+        <p>Scroll through a single decision, from the state Jev reads to the intents it sends. The numbers are one example step; every question is quoted from the source. Select any node to read its full prompt.</p>
+      </header>
+
+      <div class="tree-body">
+        <figure class="tree-figure" data-tree-figure>
+          <svg class="tree-svg" data-tree viewBox="0 0 1280 690" role="group" aria-label="Decision graph: state, Call A, routes, arguments, Call B, gate, act"></svg>
+          <figcaption class="tree-rail" aria-hidden="true">
+            <ol>
+              <li data-rail="1">Observe</li><li data-rail="2">Ask</li><li data-rail="3">Arguments</li><li data-rail="4">Site</li><li data-rail="5">Gate</li><li data-rail="6">Act</li>
+            </ol>
+          </figcaption>
+        </figure>
+
+        <div class="stages">
+          <article class="stage" data-stage-article="1">
+            <p class="stage-num" aria-hidden="true">1</p>
+            <h3>Observe</h3>
+            <p>Code reads the simulation and writes what Jev needs into one JSON object: its troops and gold, each neighbor's strength and attitude, who could be finished off this step, and a short memory of its goal and what its last actions achieved.</p>
+            <p>It also prunes the options. Jev only ever chooses among actions the simulation would accept right now.</p>
+            <pre class="code" tabindex="0"><code>{
+  <span class="k">"me"</span>: { <span class="k">"land_share"</span>: <span class="n">0.24</span>, <span class="k">"troop_status"</span>: <span class="s">"healthy"</span>,
+          <span class="k">"gold"</span>: <span class="n">412000</span> },
+  <span class="k">"players"</span>: {
+    <span class="k">"P3"</span>: { <span class="k">"kind"</span>: <span class="s">"nation"</span>, <span class="k">"troops_vs_mine"</span>: <span class="n">0.58</span>,
+            <span class="k">"attacking_me"</span>: <span class="n">false</span>,
+            <span class="k">"conquest"</span>: { <span class="k">"share_of_my_troops_to_finish_them"</span>: <span class="n">0.41</span> } }
+  },
+  <span class="k">"memory"</span>: { <span class="k">"goal"</span>: <span class="s">"conquer_neighbor"</span>,
+              <span class="k">"recent_actions"</span>: [<span class="s">"expand: +1,204 tiles"</span>] }
+}</code></pre>
+          </article>
+
+          <article class="stage" data-stage-article="2">
+            <p class="stage-num" aria-hidden="true">2</p>
+            <h3>Ask, once</h3>
+            <p>Call A is a single request. It asks which of the <span data-src="routeCount">8</span> routes to take and which of <span data-src="goalCount">5</span> goals fits, and in the same request, every side decision: what to buy, whether to accept an alliance, how dangerous each neighbor is.</p>
+            <blockquote class="quote" data-quote="route"></blockquote>
+            <div class="bars" data-route-bars aria-label="Example route probabilities"></div>
+          </article>
+
+          <article class="stage" data-stage-article="3">
+            <p class="stage-num" aria-hidden="true">3</p>
+            <h3>Arguments, asked before they're needed</h3>
+            <p>Jev answers who to attack and how hard before it has picked a route, so a step never needs a second round trip. Troop amounts are scores on a scale, and code turns the expected level into a share of the army.</p>
+            <blockquote class="quote" data-quote="attack_target" data-limit="2"></blockquote>
+            <div class="levels" data-levels aria-label="attack_commit levels"></div>
+          </article>
+
+          <article class="stage" data-stage-article="4">
+            <p class="stage-num" aria-hidden="true">4</p>
+            <h3>Pick a tile</h3>
+            <p>Only builds, naval landings and nukes need a concrete tile. Code ranks the legal sites and Jev picks one in Call B. This step is a land attack, so it skips Call B.</p>
+            <blockquote class="quote" data-quote="boat_site"></blockquote>
+          </article>
+
+          <article class="stage" data-stage-article="5">
+            <p class="stage-num" aria-hidden="true">5</p>
+            <h3>The weakest link</h3>
+            <p>Jev's confidence in a step is its lowest confidence among the answers that matter: the route and its target. Below <span data-src="minConfidence">0.35</span> the step holds. When the top route comes back with no good target, Jev falls through to the next route that drew at least <span data-src="fallback">15%</span>.</p>
+            <div class="gate" data-gate></div>
+            <p class="small">Troop amounts, structures and sites are preferences. They're logged but never gated, so a close call between two good options doesn't stop Jev from acting.</p>
+          </article>
+
+          <article class="stage" data-stage-article="6">
+            <p class="stage-num" aria-hidden="true">6</p>
+            <h3>Guard, then act</h3>
+            <p>Code has the last word on troops. It keeps a reserve at home against the strongest neighbor, trims any push that would empty the army, and resizes an attack that can finish its target, up to <span data-src="finishCap">75%</span> of troops. Side decisions go out in the same step. Code checks every intent against the simulation again right before sending it.</p>
+            <ul class="intents" data-intents></ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="questions" id="questions" aria-labelledby="questions-title">
+      <header class="section-head">
+        <h2 id="questions-title"><span data-src="promptCount">23</span> questions, verbatim</h2>
+        <p>These prompts are what the Jeviatus DAO votes on. Below is every question Jev can be asked, read from <a data-file href="https://github.com/alexandre-schaffner/jeviatus/blob/main/harness/decide/questions.ts">questions.ts</a> when this page was built<span data-sha></span>. Open one, then rewrite it in the <a href="./editor.html">editor</a>.</p>
+      </header>
+      <div class="q-groups" data-questions></div>
+    </section>
+
+    <section class="levers" id="levers" aria-labelledby="levers-title">
+      <div class="levers-track" data-levers-track>
+        <header class="lever lever-intro">
+          <h2 id="levers-title">Four ways to change how Jev plays</h2>
+          <p>Lightest first. Anyone can pull the first one in the editor, with no code. The other three are code changes, for mistakes a sentence can't prevent.</p>
+          <p class="lever-hint" aria-hidden="true">Keep scrolling <span>→</span></p>
+        </header>
+
+        <article class="lever">
+          <p class="lever-num" aria-hidden="true">1</p>
+          <h3>A hint</h3>
+          <p>Add or reword one of the hints Jev weighs. You write it in plain English in the <a href="./editor.html">editor</a>, with nothing to install or compile.</p>
+          <div class="diff" role="img" aria-label="Example diff adding a consider line to questions.ts">
+            <p class="diff-file">harness/decide/questions.ts <span>example</span></p>
+            <pre><code><span class="ctx">  "attacking a player much stronger than me (troops_vs_mine above 1) usually fails",</span>
+<span class="add">+ "a neighbor already fighting on another front has fewer troops at home than troops_vs_mine suggests",</span>
+<span class="ctx">  "unclaimed land is the cheapest growth while it lasts",</span></code></pre>
+          </div>
+        </article>
+
+        <article class="lever">
+          <p class="lever-num" aria-hidden="true">2</p>
+          <h3>A fact</h3>
+          <p>If Jev keeps misjudging something, it may not be able to see it. Add a field to the state it reads, then point a hint at it.</p>
+          <div class="diff" role="img" aria-label="Example diff adding a field to the player summary">
+            <p class="diff-file">harness/decide/questions.ts <span>example</span></p>
+            <pre><code><span class="ctx">function playerLine(o: PlayerObs) {</span>
+<span class="ctx">  return {</span>
+<span class="ctx">    troops_vs_mine: j.troops_vs_mine,</span>
+<span class="add">+   wars_they_are_fighting: j.outgoing_attacks,</span>
+<span class="ctx">    attitude: j.their_attitude_to_me,</span></code></pre>
+          </div>
+        </article>
+
+        <article class="lever">
+          <p class="lever-num" aria-hidden="true">3</p>
+          <h3>A guard</h3>
+          <p>Some calls shouldn't be left to the model. Code already keeps troops home and sizes finishing blows; add a guard when a mistake is costly and easy to detect.</p>
+          <div class="diff" role="img" aria-label="Example diff lowering a finishing cap in pipeline.ts">
+            <p class="diff-file">harness/decide/pipeline.ts <span>example</span></p>
+            <pre><code><span class="ctx">export const FINISH_CAP = <b data-src="finishCapRaw">0.75</b>;</span>
+<span class="del">- export const FINISH_CAP_UNDER_ATTACK = <b data-src="underAttack">0.5</b>;</span>
+<span class="add">+ export const FINISH_CAP_UNDER_ATTACK = <b data-src="underAttackNext">0.4</b>;</span></code></pre>
+          </div>
+        </article>
+
+        <article class="lever">
+          <p class="lever-num" aria-hidden="true">4</p>
+          <h3>A question</h3>
+          <p>When a decision deserves its own judgment, give it one: a new choice, score or yes/no question in Call A, and the code that acts on the answer.</p>
+          <div class="diff" role="img" aria-label="Example diff adding a new yes or no question">
+            <p class="diff-file">harness/decide/questions.ts <span>example</span></p>
+            <pre><code><span class="add">+ q[`sam_cover.${o.ref}`] = noul({</span>
+<span class="add">+   role: WHO,</span>
+<span class="add">+   question: `${o.ref} just built a missile silo. Should I cover my cities with a SAM launcher now?`,</span>
+<span class="add">+ });</span></code></pre>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="lands" id="propose" aria-labelledby="lands-title">
+      <header class="section-head">
+        <h2 id="lands-title">From an idea to Jev's next game</h2>
+        <p>Every change to how Jev plays is argued in public, voted on by token holders and reviewed by a maintainer.</p>
+      </header>
+      <ol class="timeline" data-timeline>
+        <li>
+          <h3>Watch a game</h3>
+          <p>Follow Jev in a match. The live overlay shows every step: the route it picked, how sure it was, and why it held back.</p>
+        </li>
+        <li>
+          <h3>Rewrite a hint</h3>
+          <p>Open the <a href="./editor.html">decision tree editor</a>, pick the decision that went wrong and say, in plain English, what Jev should weigh. The editor shows the exact change before anything leaves your browser.</p>
+        </li>
+        <li>
+          <h3>Debate it on the forum</h3>
+          <p>Start a thread on the Jeviatus forum. Players argue the strategy, point at games, and sharpen the wording before it goes to a vote.</p>
+        </li>
+        <li>
+          <h3>Vote on Snapshot</h3>
+          <p>Publish the proposal to the Jeviatus space on Snapshot. Each wallet votes with the tokens it holds. Signing is free because it sends no transaction.</p>
+        </li>
+        <li>
+          <h3>A bot opens the pull request</h3>
+          <p>When a vote passes, a GitHub Action opens a pull request that changes only the text that was voted on.</p>
+        </li>
+        <li>
+          <h3>A maintainer reviews and merges</h3>
+          <p>A maintainer checks the change and approves it. The next game runs the new prompt, and this page, built from the same file, quotes it.</p>
+        </li>
+      </ol>
+      <p class="lands-dev">Developers can skip straight to a pull request against <a data-file href="https://github.com/alexandre-schaffner/jeviatus/blob/main/harness/decide/questions.ts">questions.ts</a>; <code>bun test</code> and <code>bun run typecheck</code> must pass.</p>
+    </section>
+
+    <section class="govern" id="govern" aria-labelledby="govern-title">
+      <header class="section-head">
+        <h2 id="govern-title">What the DAO is deciding</h2>
+        <p>Live from the Jeviatus space on Snapshot and the strategy forum.</p>
+      </header>
+      <div class="govern-grid">
+        <div class="govern-col">
+          <div class="govern-col-head">
+            <h3>On the ballot</h3>
+            <a class="govern-more" data-space-link href="https://snapshot.org">All proposals ↗</a>
+          </div>
+          <div class="govern-list" data-ballot aria-live="polite"></div>
+        </div>
+        <div class="govern-col">
+          <div class="govern-col-head">
+            <h3>On the forum</h3>
+            <a class="govern-more" data-forum-link href="#">Open the forum ↗</a>
+          </div>
+          <div class="govern-list" data-topics aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta" aria-labelledby="cta-title">
+      <h2 id="cta-title" data-cta-title>Teach Jev its next habit.</h2>
+      <div class="cta-code" aria-hidden="true">
+        <p class="diff-file">harness/decide/questions.ts</p>
+        <pre><code>consider: [
+  <span class="s">"one good attack at a time usually beats several weak ones"</span>,
+  <span class="typed" data-typed></span><span class="caret"></span>
+]</code></pre>
+      </div>
+      <div class="cta-row">
+        <a class="btn btn-light" href="./editor.html">Open the editor</a>
+        <a class="btn btn-outline" data-repo href="https://github.com/alexandre-schaffner/jeviatus">Read the source<span class="arrow" aria-hidden="true">↗</span></a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p class="footer-brand">Jeviatus DAO</p>
+    <p>Plays <a href="https://openfront.io">OpenFront</a>. Decisions by Jev, a TypeSafe System One model<span data-model></span>.</p>
+    <p><a href="./editor.html">Decision tree editor</a> · <a data-repo href="https://github.com/alexandre-schaffner/jeviatus">Source on GitHub</a></p>
+    <p>Automated play affects other players: run Jev in private lobbies.</p>
+    <p class="footer-sha" data-footer-sha></p>
+  </footer>
+
+  <dialog class="prompt-dialog" data-dialog aria-labelledby="dialog-title">
+    <form method="dialog" class="dialog-close-form"><button class="dialog-close" aria-label="Close">×</button></form>
+    <div data-dialog-body></div>
+  </dialog>
+
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

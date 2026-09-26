@@ -22,6 +22,8 @@
     "extension/**/*",
     "harness/**/*",
     "scripts/**/*",
+    "site/**/*",
+    "governance/**/*",
     "tests/**/*",
     "vendor/OpenFrontIO/src/client/vite-env.d.ts"
   ]
