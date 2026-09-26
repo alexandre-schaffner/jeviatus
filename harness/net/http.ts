@@ -32,8 +32,8 @@ export async function createGame(
 
 // Mirrors ServerEnv.workerPath: games route to workers by hash of the id.
 // Dev runs 2 workers (NUM_WORKERS default).
-export function workerPathFor(gameID: string, numWorkers = 2): string {
-  return `w${simpleHash(gameID) % numWorkers}`;
+export function workerPathFor(gameID: string): string {
+  return `w${simpleHash(gameID) % 2}`;
 }
 
 export function wsUrl(baseUrl: string, workerPath: string): string {

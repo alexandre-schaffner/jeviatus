@@ -20,7 +20,7 @@ import { ATTACK_INDEX_SENT } from "src/core/StatsSchemas";
 
 export const KILL_THRESHOLD_TILES = 100;
 
-export interface Rival {
+interface Rival {
   player: Player;
   attackTroops: number;
 }
@@ -42,7 +42,7 @@ export interface ConquestEstimate {
 }
 
 // Gold the conqueror receives, mirroring GameImpl.conquerPlayer.
-export function conquestLoot(game: Game, target: Player): number {
+function conquestLoot(game: Game, target: Player): number {
   if (target.type() === PlayerType.Human) {
     const sent = game.stats().getPlayerStats(target)?.attacks?.[ATTACK_INDEX_SENT] ?? 0n;
     if (sent === 0n) return 0;

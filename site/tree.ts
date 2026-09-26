@@ -4,6 +4,7 @@
 // The highlighted path is an example step: attack P3.
 
 import type { Source } from "./source";
+import { esc } from "./ui.ts";
 
 export const W = 1280;
 export const H = 690;
@@ -166,9 +167,9 @@ export function fitBox([x, y, w, h]: readonly number[], aspect: number): string 
   return `${x + (w - bw) / 2} ${y + (h - bh) / 2} ${bw} ${bh}`;
 }
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
-
-export function renderTree(svg: SVGSVGElement, src: Source, example = true): { nodes: TreeNode[]; edges: TreeEdge[] } {
+// `onSelect` fires with a node's prompt id on click, Enter or Space.
+export function renderTree(svg: SVGSVGElement, src: Source, opts: { example?: boolean; onSelect: (prompt: string) => void }): void {
+  const example = opts.example ?? true;
   const { nodes, edges } = layout(src, example);
   const e = edges
     .map((x) => `<path class="edge${x.path ? " on" : ""}${x.dashed ? " dashed" : ""}" data-stage="${x.stage}" data-id="${esc(x.id)}" d="${x.d}"/>`)
@@ -202,5 +203,16 @@ export function renderTree(svg: SVGSVGElement, src: Source, example = true): { n
     `<text class="note" x="${COL.ask + 20}" y="${BUS - 12}" data-stage="2">side decisions · applied beside the main action, never gated</text>` +
     `<text class="note" x="${COL.site}" y="${rowY(7) + 4}" text-anchor="middle" data-stage="4">Call B only when a route needs a tile</text>`;
   svg.innerHTML = `<g class="edges">${e}</g>${notes}<g class="nodes">${n}</g>`;
-  return { nodes, edges };
+  const pick = (e: Event) => (e.target as Element).closest<SVGGElement>("[data-prompt]")?.dataset.prompt;
+  svg.addEventListener("click", (e) => {
+    const id = pick(e);
+    if (id) opts.onSelect(id);
+  });
+  svg.addEventListener("keydown", (e) => {
+    const id = pick(e);
+    if (id && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      opts.onSelect(id);
+    }
+  });
 }

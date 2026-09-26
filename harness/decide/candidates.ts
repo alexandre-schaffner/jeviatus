@@ -23,7 +23,7 @@ export const ROUTES = {
 } as const;
 export type Route = keyof typeof ROUTES;
 
-export const BUILDABLE = [
+const BUILDABLE = [
   UnitType.City,
   UnitType.Port,
   UnitType.Factory,
@@ -33,7 +33,7 @@ export const BUILDABLE = [
 ] as const;
 export type Buildable = (typeof BUILDABLE)[number];
 
-export const BUILD_KEYS: Record<Buildable, string> = {
+const BUILD_KEYS: Record<Buildable, string> = {
   [UnitType.City]: "city",
   [UnitType.Port]: "port",
   [UnitType.Factory]: "factory",
@@ -51,7 +51,7 @@ export const BUILD_PURPOSE: Record<Buildable, string> = {
   [UnitType.MissileSilo]: "launches nukes: atom bombs (750k) wipe out a city-sized area, hydrogen bombs (5M) a whole region; a strong threat against bigger rivals",
 };
 
-export interface BoatTarget {
+interface BoatTarget {
   obs: PlayerObs;
   dst: TileRef;
 }
@@ -74,7 +74,7 @@ export const UPGRADE_PURPOSE: Partial<Record<Buildable, string>> = {
 };
 
 // A big purchase worth saving gold for instead of spending it now.
-export interface SavingsGoal {
+interface SavingsGoal {
   key: string;
   cost: number;
   why: string;
@@ -83,15 +83,15 @@ export interface SavingsGoal {
 // Trains spawn per factory with hyperbolic decay (Config.trainSpawnRate,
 // midpoint at 10 factories): past this, another factory adds little unless it
 // connects stations.
-export const TRAIN_FACTORY_MIDPOINT = 10;
+const TRAIN_FACTORY_MIDPOINT = 10;
 
 // Below this troop fill, sending troops accomplishes nothing: prune the
 // troop-spending routes rather than let Jev waste them.
-export const MIN_FILL_TO_SEND = 0.05;
+const MIN_FILL_TO_SEND = 0.05;
 
 // One of my running attacks on a player, with the facts that decide whether
 // to pull it back.
-export interface RetreatCandidate {
+interface RetreatCandidate {
   attack: Attack;
   target: Player;
   ref: string;
@@ -161,10 +161,6 @@ export class SeaReach {
       }
     }
     return this.cache;
-  }
-
-  invalidate(): void {
-    this.computedAt = -Infinity;
   }
 }
 

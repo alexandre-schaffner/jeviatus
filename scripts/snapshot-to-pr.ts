@@ -15,7 +15,7 @@
 import { $ } from "bun";
 import { readFileSync, writeFileSync } from "node:fs";
 import config from "../governance/config.json";
-import { APP, applyPatch, describeEdits, extractPatch, type Patch } from "../governance/patch";
+import { APP, applyPatch, describeEdits, extractPatch, LIMITS, type Patch } from "../governance/patch";
 import { parsePromptFile, type PromptFile } from "../governance/prompts";
 
 interface Proposal {
@@ -29,7 +29,6 @@ interface Proposal {
   scores_total: number;
   quorum: number;
   discussion: string;
-  end: number;
 }
 
 const args = process.argv.slice(2);
@@ -38,7 +37,7 @@ const flag = (name: string) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 const dryRun = args.includes("--dry-run");
-const space = flag("--space") ?? process.env.SNAPSHOT_SPACE ?? config.snapshot.space;
+const space = flag("--space") ?? config.snapshot.space;
 const only = flag("--proposal");
 const branchBase = config.branch;
 
@@ -49,7 +48,7 @@ async function closedProposals(): Promise<Proposal[]> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       query: `{ proposals(first: 100, where: ${where}, orderBy: "end", orderDirection: desc) {
-        id title body author app choices scores scores_total quorum discussion end } }`,
+        id title body author app choices scores scores_total quorum discussion } }`,
     }),
   });
   const json = await res.json();
@@ -108,7 +107,7 @@ async function openPr(p: Proposal, patch: Patch, text: string, branch: string, f
   ]
     .filter((l, i, a) => l !== "" || a[i - 1] !== "")
     .join("\n");
-  const title = `DAO: ${p.title}`.slice(0, 120);
+  const title = `DAO: ${p.title}`.slice(0, LIMITS.title);
   if (dryRun) return console.log(`  would open PR ${branch}: ${title}`);
   await $`git checkout -B ${branch} origin/${branchBase}`;
   writeFileSync(patch.file, text);

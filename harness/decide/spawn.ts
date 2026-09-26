@@ -4,9 +4,10 @@
 // players and the nations' fixed spawn points), i.e. my share of an early
 // Voronoi split. It predicts early growth far better than local land density.
 
-import { type Game, type Player, PlayerType, TerrainType } from "src/core/game/Game";
+import { type Game, type Player, TerrainType } from "src/core/game/Game";
 import type { TileRef } from "src/core/game/GameMap";
 import { compass, landNear, mapRegion, type SectorGrid } from "../observe/sectors";
+import { kindOf } from "../observe/state";
 import type { SiteCandidate } from "./candidates";
 
 interface Anchor {
@@ -77,10 +78,6 @@ function landmasses(game: Game): Landmasses {
     landmassCache.set(game, l);
   }
   return l;
-}
-
-function kindOf(p: Player): Anchor["kind"] {
-  return p.type() === PlayerType.Human ? "human" : p.type() === PlayerType.Nation ? "nation" : "tribe";
 }
 
 // Everyone who is or will be on the map: placed spawns plus the nations'

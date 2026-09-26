@@ -8,14 +8,12 @@ import type { PromptNode } from "../governance/prompts";
 import { forumLive, GOV, latestBlock, newTopicUrl, proposalUrl, spaceInfo, votingLive } from "./gov.ts";
 import { promptFile, source } from "./source.ts" with { type: "macro" };
 import { renderTree } from "./tree.ts";
+import { $, $$, esc, groupQuestions } from "./ui.ts";
 
 const SRC = source();
 const PF = promptFile();
 const FILE = PF.file;
 
-const $ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
-const $$ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document) => [...root.querySelectorAll<T>(sel)];
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 const rich = (s: string) => esc(s).replace(/`([^`]+)`/g, '<span class="tick">$1</span>').replace(/&lt;([a-z …]+)&gt;/g, '<span class="slot">$1</span>');
 const blob = (line?: number) => `${SRC.repo}/blob/main/${SRC.file}${line ? `#L${line}` : ""}`;
 
@@ -94,20 +92,12 @@ function evaluate() {
   const patch = currentPatch();
   const problems = patch.edits.length ? validatePatch(patch).problems : [];
   const applied = patch.edits.length && !problems.length ? applyPatch(PF.text, FILE, patch) : { text: PF.text, problems: [] };
-  const editorUrl = GOV.site ? `${GOV.site.replace(/\/$/, "")}/editor.html` : undefined;
+  const editorUrl = GOV.site ? `${GOV.site.replace(/\/$/, "")}/editor` : undefined;
   const body = proposalBody({ why: draft.why || "(Explain why this helps Jev.)", discussion: draft.discussion, file: FILE, patch, editorUrl });
   return { patch, problems: [...problems, ...applied.problems], text: applied.text, body };
 }
 
 // ---------- Selection ----------
-
-const GROUPS: [title: string, match: (id: string) => boolean][] = [
-  ["The main route", (id) => id === "route" || id === "goal"],
-  ["Arguments", (id) => /^(expand_commit|attack_target|attack_commit|boat_target|betray_target|build_unit|nuke_target|nuke_type|ally_propose)$/.test(id)],
-  ["The purse", (id) => id === "spend"],
-  ["Side decisions", (id) => id.includes(".<")],
-  ["Sites", (id) => id.endsWith("_site")],
-];
 
 const ids = Object.keys(FILE.prompts);
 const params = new URLSearchParams(location.search);
@@ -128,20 +118,9 @@ function select(id: string, focus = false): void {
 // ---------- Tree ----------
 
 const svg = $<SVGSVGElement>("[data-tree]")!;
-renderTree(svg, SRC, false);
+renderTree(svg, SRC, { example: false, onSelect: (id) => select(id, true) });
 svg.setAttribute("viewBox", `-10 20 1300 650`);
 for (const n of $$<SVGGElement>("[data-prompt]", svg)) n.setAttribute("aria-label", `Edit ${n.dataset.prompt}`);
-svg.addEventListener("click", (e) => {
-  const n = (e.target as Element).closest<SVGGElement>("[data-prompt]");
-  if (n) select(n.dataset.prompt!, true);
-});
-svg.addEventListener("keydown", (e) => {
-  const n = (e.target as Element).closest<SVGGElement>("[data-prompt]");
-  if (n && (e.key === "Enter" || e.key === " ")) {
-    e.preventDefault();
-    select(n.dataset.prompt!, true);
-  }
-});
 
 function markTree(): void {
   const edited = new Set(Object.keys(draft.prompts).filter((id) => editsFor(id).length));
@@ -157,16 +136,8 @@ function markTree(): void {
 function renderList(): void {
   const root = $("[data-list]")!;
   const filter = ($<HTMLInputElement>("[data-search]")?.value ?? "").toLowerCase();
-  const used = new Set<string>();
-  const groups = GROUPS.map(([title, match]) => {
-    const g = ids.filter((id) => !used.has(id) && match(id));
-    g.forEach((id) => used.add(id));
-    return [title, g] as const;
-  });
-  const rest = ids.filter((id) => !used.has(id));
-  if (rest.length) groups.push(["More", rest]);
-  root.innerHTML = groups
-    .map(([title, g]) => {
+  root.innerHTML = groupQuestions(ids)
+    .map(({ title, ids: g }) => {
       const shown = g.filter((id) => !filter || id.toLowerCase().includes(filter) || FILE.prompts[id].question.toLowerCase().includes(filter));
       if (!shown.length) return "";
       return (

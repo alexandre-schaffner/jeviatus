@@ -54,4 +54,4 @@ To rehearse the whole flow first, create a space on Snapshot's testnet (testnet.
 
 ### 4. Site
 
-Set `site` in `config.json` to the site's public URL, so proposals link back to the editor. Then run `bun run build:site` and host `dist/site/`.
+The site is static and is hosted on Cloudflare Pages (see the root [README](../README.md#deploy)). Every merge to `main` rebuilds it, so a merged proposal shows up on the site without a manual step. Set `site` in `config.json` to its public URL, so proposals link back to the editor.

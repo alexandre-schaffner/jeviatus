@@ -20,8 +20,6 @@ export interface JoinOptions {
   // A UUID; the dev server accepts it as the token and derives persistentID.
   token: string;
   username: string;
-  // Dev servers run with GIT_COMMIT=DEV.
-  gitCommit?: string;
 }
 
 type Listener = (msg: ServerMessage) => void;
@@ -32,8 +30,6 @@ export class GameSocket {
   private listeners: Listener[] = [];
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private closeListeners: ((code: number, reason: string) => void)[] = [];
-  bytesSent = 0;
-  intentsSent = 0;
 
   constructor(private readonly url: string) {}
 
@@ -86,13 +82,12 @@ export class GameSocket {
       username: opts.username,
       clanTag: null,
       turnstileToken: null,
-      gitCommit: opts.gitCommit ?? "DEV",
+      gitCommit: "DEV", // dev servers run with GIT_COMMIT=DEV
       platform: "web",
     });
   }
 
   sendIntent(intent: Intent): void {
-    this.intentsSent++;
     this.send({ type: "intent", intent });
   }
 
@@ -102,9 +97,7 @@ export class GameSocket {
 
   send(msg: ClientMessage): void {
     if (this.ws === null || this.ws.readyState !== WebSocket.OPEN) return;
-    const frame = encodeClientMessage(msg, this.ctx);
-    this.bytesSent += frame.byteLength;
-    this.ws.send(frame);
+    this.ws.send(encodeClientMessage(msg, this.ctx));
   }
 
   close(): void {

@@ -17,7 +17,6 @@ import { Mirror } from "./sim/mirror";
 
 export interface GameOptions {
   map: GameMapType;
-  mapSize?: GameMapSize;
   nations: number | "default" | "disabled";
   difficulty: Difficulty;
   tribes: number;
@@ -25,7 +24,7 @@ export interface GameOptions {
 
 export interface SessionOptions {
   config: HarnessConfig;
-  jevFor: (i: number) => Jev;
+  jev: Jev;
   agents: number;
   trace?: Trace;
   dryRun?: boolean;
@@ -42,10 +41,10 @@ export interface SessionResult {
   desyncs: number;
 }
 
-export function gameConfig(g: GameOptions, gameType: GameType): GameConfig {
+function gameConfig(g: GameOptions, gameType: GameType): GameConfig {
   return {
     gameMap: g.map,
-    gameMapSize: g.mapSize ?? GameMapSize.Normal,
+    gameMapSize: GameMapSize.Normal,
     difficulty: g.difficulty,
     gameType,
     gameMode: GameMode.FFA,
@@ -61,6 +60,7 @@ export function gameConfig(g: GameOptions, gameType: GameType): GameConfig {
 }
 
 const USERNAMES = ["Jev", "JevTwo", "JevThree", "JevFour", "JevFive", "JevSix", "JevSeven", "JevEight"];
+const username = (i: number) => USERNAMES[i] ?? `Jev${i + 1}`;
 
 // --- live ------------------------------------------------------------------------
 
@@ -77,7 +77,7 @@ export interface WatchOptions {
   // Spectators to wait for in the lobby before starting (0 = start at once).
   spectators: number;
   // Human players (e.g. friends on your LAN) to wait for, besides the agents.
-  humans?: number;
+  humans: number;
   timeoutMs: number;
   // Called with the spectate URL once the lobby exists (e.g. open a browser).
   onLobby?: (spectateUrl: string) => void;
@@ -125,7 +125,7 @@ export async function runLive(
       buffered: [],
     };
     seats.push(seat);
-    const name = USERNAMES[i] ?? `Jev${i + 1}`;
+    const name = username(i);
     const bucket = new TokenBucket(config.intentsPerMinute);
     seat.socket.onClose((code, reason) => {
       if (code !== 1000) errors.push(`${name}: socket closed ${code} ${reason}`);
@@ -163,7 +163,7 @@ export async function runLive(
           seat.agent = new Agent({
             name,
             mirror,
-            jev: opts.jevFor(i),
+            jev: opts.jev,
             config,
             bucket,
             send: (intent) => seat.socket.sendIntent(intent),
@@ -212,10 +212,10 @@ export async function runLive(
     await seat.socket.connect();
     seat.socket.join({ gameID, token: seat.token, username: name });
   }
-  if (watch && (watch.spectators > 0 || (watch.humans ?? 0) > 0)) {
+  if (watch && (watch.spectators > 0 || watch.humans > 0)) {
     const playUrl = spectateUrl.replace("?spectate", "");
     if (watch.humans) opts.log(`human players join at ${playUrl}`);
-    opts.log(`waiting up to ${Math.round(watch.timeoutMs / 1000)}s for ${watch.spectators} spectator(s) and ${watch.humans ?? 0} human player(s)`);
+    opts.log(`waiting up to ${Math.round(watch.timeoutMs / 1000)}s for ${watch.spectators} spectator(s) and ${watch.humans} human player(s)`);
     watch.onLobby?.(spectateUrl);
   }
 
@@ -249,7 +249,7 @@ export class LocalRelay {
       config: gameConfig(game, GameType.Private),
       players: this.clientIDs.map((clientID, i) => ({
         clientID,
-        username: USERNAMES[i] ?? `Jev${i + 1}`,
+        username: username(i),
         clanTag: null,
         isLobbyCreator: i === 0,
       })),
@@ -270,23 +270,20 @@ export class LocalRelay {
 export async function runOffline(
   opts: SessionOptions & {
     game: GameOptions;
-    // Wait for each in-flight step before the next tick (deterministic tests).
-    lockstep?: boolean;
-    realtime?: boolean;
-    mapsDir?: string;
-    fixedMapDir?: string;
+    // Don't pace ticks in real time; wait for each in-flight step instead (lockstep).
+    fast: boolean;
   },
-): Promise<SessionResult & { mirror: Mirror; agents: Agent[] }> {
+): Promise<SessionResult> {
   const relay = new LocalRelay(opts.game, opts.agents);
   const errors: string[] = [];
-  const mirror = await Mirror.create(relay.start, relay.clientIDs[0], new FsMapLoader(opts.mapsDir, opts.fixedMapDir), {
+  const mirror = await Mirror.create(relay.start, relay.clientIDs[0], new FsMapLoader(), {
     onError: (e) => errors.push(`sim error ${e.errMsg}`),
   });
   const agents = relay.clientIDs.map((clientID, i) => {
     return new Agent({
       name: relay.start.players[i].username,
       mirror: mirror.viewAs(clientID),
-      jev: opts.jevFor(i),
+      jev: opts.jev,
       config: opts.config,
       bucket: new TokenBucket(opts.config.intentsPerMinute),
       send: relay.sender(clientID),
@@ -301,13 +298,13 @@ export async function runOffline(
     const t0 = performance.now();
     mirror.addTurn(relay.nextTurn(turn));
     for (const a of agents) a.onTick();
-    if (opts.lockstep) await Promise.all(agents.map((a) => a.pending));
+    if (opts.fast) await Promise.all(agents.map((a) => a.pending));
     if (mirror.winner !== null) break;
     if (agents.every((a) => !a.summary().alive) && !mirror.game.inSpawnPhase() && mirror.ticks() > 400) break;
-    const wait = opts.realtime ? Math.max(0, 100 - (performance.now() - t0)) : 0;
+    const wait = opts.fast ? 0 : Math.max(0, 100 - (performance.now() - t0));
     // Yield so Jev responses can land between ticks.
     await new Promise((r) => setTimeout(r, wait));
   }
   await Promise.all(agents.map((a) => a.pending));
-  return { gameID: relay.start.gameID, ticks: mirror.ticks(), summaries: agents.map((a) => a.summary()), errors, desyncs: 0, mirror, agents };
+  return { gameID: relay.start.gameID, ticks: mirror.ticks(), summaries: agents.map((a) => a.summary()), errors, desyncs: 0 };
 }

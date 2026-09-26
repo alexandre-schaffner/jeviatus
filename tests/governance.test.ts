@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { applyPatch, extractPatch, type Patch, proposalBody, validatePatch } from "../governance/patch";
-import { parsePromptFile, QUESTIONS_FILE } from "../governance/prompts";
+import { applyPatch, extractPatch, type Patch, proposalBody, QUESTIONS_FILE, validatePatch } from "../governance/patch";
+import { parsePromptFile } from "../governance/prompts";
 
 const TEXT = readFileSync(QUESTIONS_FILE, "utf8");
 const FILE = parsePromptFile(TEXT);

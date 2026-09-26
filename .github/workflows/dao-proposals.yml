@@ -30,23 +30,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          # A token other than GITHUB_TOKEN lets the opened PRs trigger CI.
+          token: ${{ secrets.DAO_BOT_TOKEN || github.token }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
       - name: Open pull requests for passed proposals
         env:
-          # A token other than GITHUB_TOKEN lets the opened PRs trigger CI.
           GH_TOKEN: ${{ secrets.DAO_BOT_TOKEN || github.token }}
-          USE_BOT_TOKEN: ${{ secrets.DAO_BOT_TOKEN != '' }}
-          REPO: ${{ github.repository }}
           PROPOSAL: ${{ inputs.proposal }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          if [ "$USE_BOT_TOKEN" = "true" ]; then
-            git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
-          fi
           args=()
           if [ -n "$PROPOSAL" ]; then args+=(--proposal "$PROPOSAL"); fi
           if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi

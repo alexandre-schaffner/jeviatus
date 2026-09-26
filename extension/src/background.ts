@@ -1,4 +1,4 @@
-import { TypeSafeClient } from "@typesafe-ai/sdk";
+import { JevClient } from "../../harness/jev/client";
 import { DEFAULT_SETTINGS, normalizeSettings } from "./settings";
 
 interface JevRequest {
@@ -25,15 +25,5 @@ async function ask(request: JevRequest): Promise<unknown> {
   const settings = normalizeSettings(await chrome.storage.local.get(DEFAULT_SETTINGS));
   if (settings.apiKey === "") throw new Error("Add a TypeSafe API key in the Jev extension popup");
   if (!settings.enabled) throw new Error("Jev was switched off");
-  const client = new TypeSafeClient({
-    apiKey: settings.apiKey,
-    defaultModel: settings.model,
-    timeout: 4_000,
-    retry: { maxRetries: 1, backoffInitialMs: 200, backoffMaxMs: 500 },
-  });
-  return client.systemOne({
-    state: request.state as never,
-    questions: request.questions as never,
-    model: settings.model,
-  });
+  return new JevClient(settings.model, settings.apiKey).ask("", request.state as never, request.questions as never);
 }

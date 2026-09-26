@@ -6,8 +6,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
+import config from "../governance/config.json";
 import { DEFAULTS } from "../harness/config";
-import { parsePromptFile, type PromptFile, QUESTIONS_FILE, sourceFile, stringRecord, unwrap, walk } from "../governance/prompts";
+import { GOALS } from "../harness/strategy/memory";
+import { QUESTIONS_FILE } from "../governance/patch";
+import { parsePromptFile, type PromptFile, sourceFile, stringRecord, unwrap, walk } from "../governance/prompts";
 
 const ROOT = join(import.meta.dir, "..");
 const read = (file: string) => readFileSync(join(ROOT, file), "utf8");
@@ -93,18 +96,18 @@ export function source(): Source {
   }
   const { model, ...defaults } = DEFAULTS;
   return {
-    repo: "https://github.com/alexandre-schaffner/jeviatus",
+    repo: `https://github.com/${config.repo}`,
     file: QUESTIONS_FILE,
     role: file.role,
     prompts,
     routes: constObject("harness/decide/candidates.ts", "ROUTES"),
-    goals: constObject("harness/strategy/memory.ts", "GOALS"),
+    goals: GOALS,
     constants: {
-      ...constNumbers("harness/decide/pipeline.ts", ["FALLBACK_MIN_P", "FINISH_CAP", "FINISH_CAP_UNDER_ATTACK", "BOAT_MAX_FRACTION"]),
+      ...constNumbers("harness/decide/pipeline.ts", ["FALLBACK_MIN_P", "FINISH_CAP", "FINISH_CAP_UNDER_ATTACK"]),
       ...defaults,
     },
     model,
-    commit: constArrays(QUESTIONS_FILE, ["ATTACK_COMMIT", "EXPAND_COMMIT"]),
+    commit: constArrays(QUESTIONS_FILE, ["ATTACK_COMMIT"]),
     sha: git("rev-parse", "--short", "HEAD"),
   };
 }

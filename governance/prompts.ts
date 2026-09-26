@@ -7,14 +7,13 @@
 import ts from "typescript";
 import { QUESTIONS_FILE } from "./patch";
 
-export { QUESTIONS_FILE };
 
 export interface Span {
   start: number;
   end: number;
 }
 
-export interface Hint {
+interface Hint {
   text: string;
   span?: Span; // set when the hint is a plain string literal, so it can be rewritten
 }

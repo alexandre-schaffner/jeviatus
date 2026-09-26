@@ -8,11 +8,11 @@ import { GameMapType } from "src/core/game/Game";
 import type { GameMapLoader, MapData } from "src/core/game/GameMapLoader";
 import type { MapManifest } from "src/core/game/TerrainMapLoader";
 
-export const VENDOR_DIR = path.resolve(import.meta.dir, "../../vendor/OpenFrontIO");
-export const MAPS_DIR = path.join(VENDOR_DIR, "resources/maps");
+const VENDOR_DIR = path.resolve(import.meta.dir, "../../vendor/OpenFrontIO");
+const MAPS_DIR = path.join(VENDOR_DIR, "resources/maps");
 export const TEST_MAPS_DIR = path.join(VENDOR_DIR, "tests/testdata/maps");
 
-export function mapKey(map: GameMapType): string {
+function mapKey(map: GameMapType): string {
   const key = Object.keys(GameMapType).find(
     (k) => GameMapType[k as keyof typeof GameMapType] === map,
   );
@@ -22,13 +22,10 @@ export function mapKey(map: GameMapType): string {
 
 export class FsMapLoader implements GameMapLoader {
   // `fixedDir` serves one directory for every map type (test maps).
-  constructor(
-    private readonly mapsDir: string = MAPS_DIR,
-    private readonly fixedDir?: string,
-  ) {}
+  constructor(private readonly fixedDir?: string) {}
 
   getMapData(map: GameMapType): MapData {
-    const dir = this.fixedDir ?? path.join(this.mapsDir, mapKey(map));
+    const dir = this.fixedDir ?? path.join(MAPS_DIR, mapKey(map));
     const read = (name: string) => async () => new Uint8Array(fs.readFileSync(path.join(dir, name)));
     return {
       mapBin: read("map.bin"),

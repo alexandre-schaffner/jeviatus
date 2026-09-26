@@ -18,10 +18,10 @@ import { computeNukeBlastCounts, listNukeBreakAlliance, wouldNukeBreakAlliance }
 import type { PlayerObs } from "../observe/state";
 import type { SiteCandidate, SiteContext } from "./candidates";
 
-export const NUKE_TYPES = [UnitType.AtomBomb, UnitType.HydrogenBomb] as const;
+const NUKE_TYPES = [UnitType.AtomBomb, UnitType.HydrogenBomb] as const;
 export type NukeType = (typeof NUKE_TYPES)[number];
 
-export const NUKE_KEYS: Record<NukeType, string> = {
+const NUKE_KEYS: Record<NukeType, string> = {
   [UnitType.AtomBomb]: "atom_bomb",
   [UnitType.HydrogenBomb]: "hydrogen_bomb",
 };
@@ -54,7 +54,7 @@ const STRUCTURE_KEY: Record<(typeof TARGET_STRUCTURES)[number], string> = {
   [UnitType.DefensePost]: "defense_post",
 };
 
-export function hasReadySilo(me: Player): boolean {
+function hasReadySilo(me: Player): boolean {
   return me.units(UnitType.MissileSilo).some((s) => s.isActive() && !s.isInCooldown() && !s.isUnderConstruction());
 }
 

@@ -8,9 +8,8 @@
     "play": "bun harness/cli.ts",
     "build:extension": "bun scripts/build-extension.ts",
     "pin:openfront": "bun scripts/pin-openfront.ts",
-    "site": "bun site/dev.ts",
+    "site": "bun site/index.html site/editor.html",
     "build:site": "rm -rf dist/site && bun build site/index.html site/editor.html --outdir dist/site --minify --splitting",
-    "preview:site": "bun run build:site && bun site/preview.ts",
     "test": "bun test tests/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

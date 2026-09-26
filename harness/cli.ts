@@ -12,6 +12,7 @@
 //                         in your browser and wait for it to join before starting
 //                         (up to --watch-timeout seconds, default 300)
 //   --overlay-port <p>    port for the overlay page (default 9100)
+//   --no-open             with --watch: print the overlay URL, don't open it
 //   --spectators <n>      spectators to wait for with --watch (default 1)
 //   --humans <n>          human players to wait for with --watch (default 0); they
 //                         join the printed lobby URL (use `npm run dev:host` for LAN)
@@ -24,7 +25,7 @@
 import { parseArgs } from "node:util";
 import { Difficulty } from "src/core/game/Game";
 import { loadConfig } from "./config";
-import { emptyStats, JevClient, type JevStats } from "./jev/client";
+import { JevClient } from "./jev/client";
 import { Trace } from "./log/trace";
 import { OverlayServer } from "./overlay/server";
 import { type GameOptions, runLive, runOffline, type SessionResult } from "./session";
@@ -82,12 +83,8 @@ const game: GameOptions = {
 };
 const agents = Math.max(1, Number(values.agents));
 const trace = new Trace(config.runsDir, values.offline ? "offline" : "live", !values["no-trace"]);
-const jevs: JevClient[] = [];
-const jevFor = (_i: number) => {
-  const j = new JevClient(config.model, config.typesafeApiKey);
-  jevs.push(j);
-  return j;
-};
+// One client for every agent: it holds nothing per player but the stats.
+const jev = new JevClient(config.model, config.typesafeApiKey);
 const log = (line: string) => console.log(line);
 const overlay = values.watch ? new OverlayServer(Number(values["overlay-port"])) : null;
 overlay?.start();
@@ -98,7 +95,7 @@ const openInBrowser = (url: string) => {
 };
 const common = {
   config,
-  jevFor,
+  jev,
   agents,
   trace,
   dryRun: values["dry-run"],
@@ -111,7 +108,7 @@ trace.write({ type: "run", at: new Date().toISOString(), args: values, game, mod
 
 let result: SessionResult;
 if (values.offline) {
-  result = await runOffline({ ...common, game, realtime: !values.fast, lockstep: values.fast });
+  result = await runOffline({ ...common, game, fast: values.fast });
 } else {
   const watch = values.watch
     ? {
@@ -128,20 +125,7 @@ if (values.offline) {
   result = await runLive({ ...common, game: values.join ? undefined : game, joinGameID: values.join, watch });
 }
 
-const stats: JevStats = jevs.reduce((acc, j) => {
-  acc.calls += j.stats.calls;
-  acc.failures += j.stats.failures;
-  acc.inputTokens += j.stats.inputTokens;
-  acc.outputTokens += j.stats.outputTokens;
-  acc.totalLatencyMs += j.stats.totalLatencyMs;
-  acc.maxLatencyMs = Math.max(acc.maxLatencyMs, j.stats.maxLatencyMs);
-  for (const [k, v] of Object.entries(j.stats.byLabel)) {
-    const l = (acc.byLabel[k] ??= { calls: 0, latencyMs: 0 });
-    l.calls += v.calls;
-    l.latencyMs += v.latencyMs;
-  }
-  return acc;
-}, emptyStats());
+const { stats } = jev;
 
 const summary = {
   gameID: result.gameID,

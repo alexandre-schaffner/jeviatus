@@ -19,7 +19,6 @@ export interface SpaceInfo {
   network: string;
   symbol: string;
   voting: { delay: number | null; period: number | null; quorum: number | null; type: string | null };
-  filters: { minScore: number; onlyMembers: boolean };
 }
 
 export interface ProposalInfo {
@@ -30,9 +29,6 @@ export interface ProposalInfo {
   scores: number[];
   scores_total: number;
   end: number;
-  author: string;
-  discussion: string;
-  app: string;
 }
 
 async function graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
@@ -48,7 +44,7 @@ async function graphql<T>(query: string, variables: Record<string, unknown>): Pr
 
 export async function spaceInfo(id: string): Promise<SpaceInfo | null> {
   const d = await graphql<{ space: SpaceInfo | null }>(
-    "query($id: String!) { space(id: $id) { id name network symbol voting { delay period quorum type } filters { minScore onlyMembers } } }",
+    "query($id: String!) { space(id: $id) { id name network symbol voting { delay period quorum type } } }",
     { id },
   );
   return d.space;
@@ -57,7 +53,7 @@ export async function spaceInfo(id: string): Promise<SpaceInfo | null> {
 export async function proposals(space: string, first = 6): Promise<ProposalInfo[]> {
   const d = await graphql<{ proposals: ProposalInfo[] }>(
     `query($space: String!, $first: Int!) { proposals(first: $first, where: { space: $space }, orderBy: "created", orderDirection: desc) {
-      id title state choices scores scores_total end author discussion app } }`,
+      id title state choices scores scores_total end } }`,
     { space, first },
   );
   return d.proposals;

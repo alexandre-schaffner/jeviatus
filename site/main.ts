@@ -6,22 +6,19 @@ import { type Prompt, source } from "./source.ts" with { type: "macro" };
 import { categoryUrl, forumLive, latestTopics, proposals, proposalUrl, readSpace, relativeTime, spaceUrl, topicUrl } from "./gov.ts";
 import { TerritoryMap } from "./territory.ts";
 import { CAMERA, EXAMPLE, EXAMPLE_ROUTE_P, commitFraction, fitBox, renderTree, type Stage } from "./tree.ts";
+import { $, $$, esc, groupQuestions } from "./ui.ts";
 
 gsap.registerPlugin(ScrollTrigger, DrawSVGPlugin);
 
 const SRC = source();
-const $ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
-const $$ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document) => [...root.querySelectorAll<T>(sel)];
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 // Prompt text: backticked state paths get their own styling.
 const rich = (s: string) => esc(s).replace(/`([^`]+)`/g, '<span class="tick">$1</span>');
 
 const blob = (line?: number) => `${SRC.repo}/blob/main/${SRC.file}${line ? `#L${line}` : ""}`;
-const edit = `${SRC.repo}/edit/main/${SRC.file}`;
-const editor = (id?: string) => `./editor.html${id ? `?q=${encodeURIComponent(id)}` : ""}`;
+const editor = (id?: string) => `./editor${id ? `?q=${encodeURIComponent(id)}` : ""}`;
 
 // ---------- Facts from the source ----------
 
@@ -44,9 +41,6 @@ function fillFacts(): void {
     const v = facts[el.dataset.src!];
     if (v !== undefined) el.textContent = v;
   }
-  for (const a of $$<HTMLAnchorElement>("[data-repo]")) a.href = SRC.repo;
-  for (const a of $$<HTMLAnchorElement>("[data-edit]")) a.href = edit;
-  for (const a of $$<HTMLAnchorElement>("[data-file]")) a.href = blob();
   const sha = $("[data-sha]");
   if (sha && SRC.sha) sha.innerHTML = `, commit <a href="${SRC.repo}/commit/${SRC.sha}"><code>${esc(SRC.sha)}</code></a>`;
   const model = $("[data-model]");
@@ -170,32 +164,16 @@ function renderArtifacts(): void {
 
 // ---------- Question explorer ----------
 
-const GROUPS: [title: string, blurb: string, ids: (id: string) => boolean][] = [
-  ["The main route", "One action per step, and the strategy it serves.", (id) => id === "route" || id === "goal"],
-  ["Arguments", "Asked speculatively, in the same request as the route.", (id) => /^(expand_commit|attack_target|attack_commit|boat_target|betray_target|build_unit|nuke_target|nuke_type|ally_propose)$/.test(id)],
-  ["The purse", "Spare gold, decided every step beside the main action.", (id) => id === "spend"],
-  ["Side decisions", "One per player or running attack, applied without the gate.", (id) => id.includes(".<")],
-  ["Sites", "Call B: a concrete tile, only when the route needs one.", (id) => id.endsWith("_site")],
-];
-
 function renderQuestions(): void {
   const root = $("[data-questions]");
   if (!root) return;
-  const all = Object.values(SRC.prompts);
-  const used = new Set<string>();
-  const groups = GROUPS.map(([title, blurb, match]) => {
-    const ps = all.filter((p) => !used.has(p.id) && match(p.id));
-    for (const p of ps) used.add(p.id);
-    return [title, blurb, ps] as const;
-  });
-  const rest = all.filter((p) => !used.has(p.id));
-  if (rest.length) groups.push(["More", "Questions added since this page's groups were written.", rest]);
-  root.innerHTML = groups
-    .filter(([, , ps]) => ps.length)
+  root.innerHTML = groupQuestions(Object.keys(SRC.prompts))
+    .filter((g) => g.ids.length)
     .map(
-      ([title, blurb, ps]) =>
+      ({ title, blurb, ids }) =>
         `<section class="q-group"><h3>${esc(title)}<small>${esc(blurb)}</small></h3><div class="q-list">` +
-        ps
+        ids
+          .map((id) => SRC.prompts[id])
           .map(
             (p) =>
               `<details class="q"><summary><span class="q-id">${esc(p.id)}</span><span class="q-text">${rich(p.question || p.premise || "")}</span><span class="q-kind">${p.kind}</span></summary>` +
@@ -578,24 +556,12 @@ startMap();
 typeHints();
 
 const svg = $<SVGSVGElement>("[data-tree]")!;
-renderTree(svg, SRC);
-svg.addEventListener("keydown", (e) => {
-  const n = (e.target as Element).closest<SVGGElement>("[data-prompt]");
-  if (n && (e.key === "Enter" || e.key === " ")) {
-    e.preventDefault();
-    openPrompt(n.dataset.prompt!);
-  }
-});
-svg.addEventListener("click", (e) => {
-  const n = (e.target as Element).closest<SVGGElement>("[data-prompt]");
-  if (n) openPrompt(n.dataset.prompt!);
-});
+renderTree(svg, SRC, { onSelect: openPrompt });
 
 if (reduced) {
   chrome(null);
 } else {
   const lenis = smoothScroll();
-  dialog.addEventListener("close", () => lenis.start());
   new MutationObserver(() => (dialog.open ? lenis.stop() : lenis.start())).observe(dialog, { attributes: true, attributeFilter: ["open"] });
   heroMotion();
   thesisMotion();

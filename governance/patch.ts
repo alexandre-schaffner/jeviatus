@@ -7,12 +7,12 @@
 
 import type { PromptFile, Span } from "./prompts";
 
-export const PATCH_FENCE = "jeviatus-patch";
+const PATCH_FENCE = "jeviatus-patch";
 // The only file a proposal may touch.
 export const QUESTIONS_FILE = "harness/decide/questions.ts";
 export const APP = "jeviatus"; // Snapshot `app` tag on proposals made by the editor
 
-export const LIMITS = { hint: 500, question: 400, edits: 30, title: 120, why: 4000, body: 9500 } as const;
+export const LIMITS = { hint: 500, question: 400, edits: 30, title: 120, body: 9500 } as const;
 
 export type Edit =
   | { op: "question"; prompt: string; from: string; to: string }

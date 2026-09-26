@@ -119,7 +119,7 @@ function structures(p: Player): Record<string, number> {
 
 // Troops regrow at (10 + troops^0.73 / 4) * (1 - troops/max) per tick, which
 // peaks near 42% fill. Jev gets the band as a word, not the curve.
-export type TroopStatus = "depleted" | "low" | "optimal" | "high" | "full";
+type TroopStatus = "depleted" | "low" | "optimal" | "high" | "full";
 export function troopStatus(fill: number): TroopStatus {
   if (fill < 0.08) return "depleted";
   if (fill < 0.25) return "low";
@@ -128,7 +128,7 @@ export function troopStatus(fill: number): TroopStatus {
   return "full";
 }
 
-export const TROOP_STATUS_MEANING: Record<TroopStatus, string> = {
+const TROOP_STATUS_MEANING: Record<TroopStatus, string> = {
   depleted: "almost no troops; any attack now is futile and regrowth is slow",
   low: "few troops; regrowing, attacks will be weak",
   optimal: "regrowing at the fastest rate; spending some now is efficient",
