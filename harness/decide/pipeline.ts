@@ -149,7 +149,7 @@ export class Pipeline {
     const fronts = new Set(me.outgoingAttacks().map((x) => x.target()).filter((t): t is Player => t.isPlayer()));
     const shown = homeReserve(me, obs, fronts);
     (obs.state.me as Record<string, unknown>).troops_kept_home_share = me.troops() > 0 ? Math.round(Math.min(1, shown.troops / me.troops()) * 100) / 100 : 0;
-    const questions = routeQuestions(cands, obs.unclaimedBorderTiles, troopStatus(troopFill(game, me)), allianceContext(me, obs, cands, memory, site.refOf));
+    const questions = routeQuestions(cands, obs.unclaimedBorderTiles, troopStatus(troopFill(game, me)), allianceContext(me, obs, cands, memory, site.refOf), "strategy" in obs.state);
     const a = await this.call("route", obs.state, questions, calls);
     if (a === null) return hold("hold", `route call failed: ${calls.at(-1)?.error ?? "unknown error"}`, calls);
 

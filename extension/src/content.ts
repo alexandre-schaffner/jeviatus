@@ -5,11 +5,13 @@ import { FetchGameMapLoader } from "src/core/game/FetchGameMapLoader";
 import { createGameWireContext, decodeServerMessage, encodeClientMessage } from "src/core/ZbinWire";
 import { Agent } from "../../harness/agent";
 import type { Jev } from "../../harness/jev/client";
+import { runHeader } from "../../harness/log/format";
 import { TokenBucket } from "../../harness/net/rateLimit";
 import { Mirror } from "../../harness/sim/mirror";
 import { BRIDGE, isPageMessage, type BridgeBootstrap, type BridgeHello, type BridgeSend } from "./protocol";
 import { checkBuild, REPIN_COMMAND, short } from "./compat";
 import { jevFailureStatus } from "./jevErrors";
+import { ExtensionTraceSink } from "./traceSink";
 import { OverlayPanel, type OverlayStatus } from "./overlayPanel";
 import {
   PUBLIC_SETTINGS_DEFAULTS,
@@ -85,9 +87,14 @@ class CapturedGame {
   private blocked = false;
   private attachFailed = false;
   private decodeFailures = 0;
+  private trace: ExtensionTraceSink | null = null;
+  private finished = false;
+  // Set once the match starts: a reconnect (a new socket, same game) hands
+  // this game's mirror over instead of starting from scratch.
+  gameID: string | null = null;
 
   constructor(
-    readonly socketId: number,
+    public socketId: number,
     private readonly jev: Jev,
     private readonly panel: OverlayPanel,
     private settings: ExtensionSettings,
@@ -182,7 +189,8 @@ class CapturedGame {
     }
     if (message.type === "start") {
       this.clientID = message.myClientID ?? this.clientID;
-      void this.start(message);
+      if (this.mirror !== null && this.gameID === message.gameStartInfo.gameID) this.resume(message);
+      else void this.start(message);
       return;
     }
     if (message.type !== "turn" || this.attachFailed) return;
@@ -215,7 +223,32 @@ class CapturedGame {
       : { tone: "idle", title: "Watching", detail: "Jev is off. Its decisions are not sent." };
   }
 
+  // The page's socket dropped mid-match. OpenFront reconnects on a new socket
+  // and the server resends the start message with only the turns after the
+  // client's last one (GameServer.rejoinClient), which can't rebuild a
+  // mirror. Keep this one for the new socket instead. False: nothing worth
+  // keeping (no match running), close as usual.
+  detach(): boolean {
+    return this.mirror !== null && this.gameID !== null && !this.attachFailed && !this.finished;
+  }
+
+  rebind(socketId: number, bootstrap: BridgeBootstrap | undefined): void {
+    this.socketId = socketId;
+    if (bootstrap !== undefined) this.bootstrap = bootstrap;
+  }
+
+  private resume(message: Extract<ServerMessage, { type: "start" }>): void {
+    this.context = createGameWireContext(message.gameStartInfo.players);
+    this.trace?.write({ type: "reconnect", tick: this.mirror?.ticks() ?? null, resentTurns: message.turns.length });
+    console.info(`[Jev extension] reconnected to ${message.gameStartInfo.gameID}; resuming at tick ${this.mirror?.ticks()}`);
+    for (const turn of message.turns) this.advance(turn);
+    this.panel.show(this.playing());
+  }
+
   close(): void {
+    this.finish("socket closed");
+    void this.trace?.close();
+    this.trace = null;
     this.generation++;
     this.mirror = null;
     this.agent = null;
@@ -245,6 +278,8 @@ class CapturedGame {
       for (const turn of message.turns) mirror.addTurn(turn);
       for (const turn of this.queuedTurns.splice(0)) mirror.addTurn(turn);
       this.mirror = mirror;
+      this.gameID = message.gameStartInfo.gameID;
+      this.startTrace(message.gameStartInfo);
       this.agent = this.createAgent(mirror);
       this.panel.show(this.playing());
     } catch (error) {
@@ -259,6 +294,7 @@ class CapturedGame {
     try {
       this.mirror.addTurn(turn);
       if (this.isEnabled()) this.agent?.onTick();
+      if (this.mirror.winner !== null) this.finish("winner");
     } catch (error) {
       // A crashed mirror never recovers and its state can no longer be
       // trusted: surface it loudly and drop every later turn.
@@ -270,11 +306,39 @@ class CapturedGame {
   // The local simulation is gone for this game: stop feeding it (and stop
   // queueing turns for a mirror that will never exist).
   private fail(title: string, detail: string): void {
+    this.trace?.write({ type: "error", tick: this.mirror?.ticks() ?? null, title, detail });
+    this.finished = true; // the agent's state is no longer worth summarizing
     this.attachFailed = true;
     this.mirror = null;
     this.agent = null;
     this.queuedTurns = [];
     this.block({ tone: "error", title, detail: `${detail} Jev stays off for this game.` });
+  }
+
+  // One trace per game, same format as the CLI's (harness/log/format.ts).
+  private startTrace(start: Extract<ServerMessage, { type: "start" }>["gameStartInfo"]): void {
+    void this.trace?.close();
+    this.finished = false;
+    this.trace = new ExtensionTraceSink(start.gameID);
+    const config = toHarnessConfig(this.settings);
+    this.trace.write({
+      ...runHeader(start, {
+        source: "extension",
+        model: config.model,
+        config: { ...config, typesafeApiKey: undefined, openfrontUrl: location.origin },
+        strategy: this.settings.strategy,
+        harnessCommit: __JEV_HARNESS_COMMIT__,
+        openfrontCommit: __JEV_OPENFRONT_COMMIT__,
+      }),
+      pageCommit: this.bootstrap?.gitCommit ?? null,
+    });
+  }
+
+  private finish(reason: string): void {
+    if (this.finished || this.agent === null) return;
+    this.finished = true;
+    this.agent.finish(reason);
+    void this.trace?.flush();
   }
 
   private createAgent(mirror: Mirror): Agent {
@@ -285,6 +349,7 @@ class CapturedGame {
       config: toHarnessConfig(this.settings),
       bucket: new TokenBucket(140),
       canAct: this.isEnabled,
+      trace: this.trace ?? undefined,
       send: (intent) => {
         if (this.context === undefined) return;
         const bytes = encodeClientMessage({ type: "intent", intent }, this.context);
@@ -300,6 +365,7 @@ class CapturedGame {
       },
       log: (line) => console.info(`[Jev extension] ${line}`),
       onEvent: (event) => this.panel.decision(event),
+      strategy: this.settings.strategy ?? undefined,
     });
   }
 }
@@ -343,6 +409,7 @@ async function main(): Promise<void> {
   });
 
   const bootstraps = new Map<number, BridgeBootstrap>();
+  const detached = new Map<string, { game: CapturedGame; expiry: ReturnType<typeof setTimeout> }>();
   window.addEventListener("message", (event: MessageEvent) => {
     if (event.source !== window || event.origin !== location.origin || !isPageMessage(event.data)) return;
     const message = event.data;
@@ -352,9 +419,18 @@ async function main(): Promise<void> {
       return;
     }
     if (message.type === "socket-close") {
-      games.get(message.socketId)?.close();
+      const closed = games.get(message.socketId);
       games.delete(message.socketId);
       bootstraps.delete(message.socketId);
+      if (closed?.detach() && closed.gameID !== null) {
+        // Wait for the page to reconnect; give up (and summarize) if it doesn't.
+        const gameID = closed.gameID;
+        const expiry = setTimeout(() => {
+          detached.delete(gameID);
+          closed.close();
+        }, 120_000);
+        detached.set(gameID, { game: closed, expiry });
+      } else closed?.close();
       return;
     }
     if (message.type !== "frame" || !(message.frame instanceof ArrayBuffer)) return;
@@ -366,7 +442,25 @@ async function main(): Promise<void> {
       games.set(message.socketId, game);
     }
     const decoded = game.decode(message.frame);
-    if (decoded !== null) game.accept(decoded);
+    if (decoded === null) return;
+    // A reconnect: this socket's start names a game we're already mirroring.
+    const resumed = decoded.type === "start" ? detached.get(decoded.gameStartInfo.gameID) : undefined;
+    if (resumed !== undefined && decoded.type === "start") {
+      clearTimeout(resumed.expiry);
+      detached.delete(decoded.gameStartInfo.gameID);
+      resumed.game.rebind(message.socketId, bootstraps.get(message.socketId));
+      games.set(message.socketId, resumed.game);
+      resumed.game.accept(decoded);
+      return;
+    }
+    game.accept(decoded);
+  });
+
+  // Leaving the page (the stream heads home after each match) may never close
+  // the game socket: summarize and flush the traces while we still can.
+  window.addEventListener("pagehide", () => {
+    for (const game of games.values()) game.close();
+    for (const { game } of detached.values()) game.close();
   });
 
   const hello: BridgeHello = { bridge: BRIDGE, direction: "extension-to-page", type: "hello" };

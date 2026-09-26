@@ -5,6 +5,7 @@
 
 import { type Game, type Player, PlayerType, Relation, UnitType } from "src/core/game/Game";
 import type { TileRef } from "src/core/game/GameMap";
+import { type Strategy, strategyState } from "../strategy/doctrine";
 import type { StrategyMemory } from "../strategy/memory";
 import { type ConquestEstimate, conquestEstimate } from "./conquest";
 import type { EconomySnapshot } from "./economy";
@@ -72,6 +73,8 @@ export interface ObserveInput {
   seaReachable: ReadonlySet<string>;
   goldPerMin: number;
   econ: EconomySnapshot;
+  // The viewer-voted playstyle, if any (strategy/doctrine.ts).
+  strategy?: Strategy;
 }
 
 const RELATION = {
@@ -177,7 +180,7 @@ function scanBorder(game: Game, me: Player): {
 }
 
 export function observe(input: ObserveInput): Observation {
-  const { game, me, scan, refs, memory, seaReachable, goldPerMin, econ } = input;
+  const { game, me, scan, refs, memory, seaReachable, goldPerMin, econ, strategy } = input;
   const tick = game.ticks();
   const totalLand = Math.max(1, game.numLandTiles());
   const alive = game.players().filter((p) => p.isAlive());
@@ -311,6 +314,7 @@ export function observe(input: ObserveInput): Observation {
       boats_out: me.unitCount(UnitType.TransportShip),
     },
     players: players.map((p) => p.json),
+    ...(strategy ? { strategy: strategyState(strategy) } : {}),
     memory: memory.toState(tick, refOf),
   };
 

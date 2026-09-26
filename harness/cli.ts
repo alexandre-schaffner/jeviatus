@@ -18,6 +18,7 @@
 //   --offline             no server: simulate locally with a relay in place of it
 //   --fast                with --offline: don't pace ticks in real time; the sim
 //                         waits for each decision (lockstep), ~6x faster
+//   --strategy <file>     play a strategy file (e.g. strategies/turtle.json)
 //   --dry-run             decide and log, but never send intents
 //   --no-trace            don't write runs/<ts>/trace.jsonl
 
@@ -25,10 +26,12 @@ import { parseArgs } from "node:util";
 import { Difficulty } from "src/core/game/Game";
 import { loadConfig } from "./config";
 import { emptyStats, JevClient, type JevStats } from "./jev/client";
-import { Trace } from "./log/trace";
+import { runHeader } from "./log/format";
+import { harnessCommit, openfrontCommit, Trace } from "./log/trace";
 import { OverlayServer } from "./overlay/server";
 import { type GameOptions, runLive, runOffline, type SessionResult } from "./session";
 import { parseMap } from "./sim/mapLoader";
+import { parseStrategy, type Strategy } from "./strategy/doctrine";
 
 const { values } = parseArgs({
   options: {
@@ -48,6 +51,7 @@ const { values } = parseArgs({
     humans: { type: "string", default: "0" },
     "no-open": { type: "boolean", default: false },
     "overlay-port": { type: "string", default: "9100" },
+    strategy: { type: "string" },
     "dry-run": { type: "boolean", default: false },
     "no-trace": { type: "boolean", default: false },
   },
@@ -74,6 +78,16 @@ if (!config.typesafeApiKey) {
   process.exit(1);
 }
 
+let strategy: Strategy | undefined;
+if (values.strategy !== undefined) {
+  const parsed = parseStrategy(await Bun.file(values.strategy).json());
+  if (!parsed.ok) {
+    console.error(`${values.strategy}: ${parsed.error}`);
+    process.exit(1);
+  }
+  strategy = parsed.strategy;
+}
+
 const game: GameOptions = {
   map: parseMap(values.map!),
   nations: parseNations(values.nations!),
@@ -96,18 +110,32 @@ const openInBrowser = (url: string) => {
   if (process.platform === "darwin") Bun.spawn(["open", url]);
   else if (process.platform === "linux") Bun.spawn(["xdg-open", url]);
 };
+const commits = { harnessCommit: await harnessCommit(), openfrontCommit: await openfrontCommit() };
 const common = {
   config,
   jevFor,
   agents,
   trace,
+  // The header waits for the game start: a joined game's map and ID are
+  // only known then.
+  onStart: (start: Parameters<typeof runHeader>[0]) =>
+    trace.write({
+      ...runHeader(start, {
+        source: "cli",
+        model: config.model,
+        config: { ...config, typesafeApiKey: undefined },
+        strategy: strategy ?? null,
+        ...commits,
+      }),
+      args: values,
+      game: values.join ? undefined : game,
+    }),
   dryRun: values["dry-run"],
   maxMinutes: Number(values.minutes),
   log,
   onEvent: overlay ? (e: Parameters<OverlayServer["publish"]>[0]) => overlay.publish(e) : undefined,
+  strategy,
 };
-
-trace.write({ type: "run", at: new Date().toISOString(), args: values, game, model: config.model, config: { ...config, typesafeApiKey: undefined } });
 
 let result: SessionResult;
 if (values.offline) {

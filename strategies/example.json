@@ -1,0 +1,5 @@
+{
+  "name": "Turtle Economy",
+  "doctrine": "Grab nearby unclaimed land early, then stop expanding and build cities, ports and factories on rail. Ally with big neighbors and never attack an ally. Only fight a weak neighbor you can finish.",
+  "goal": "build_economy"
+}

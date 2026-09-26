@@ -94,13 +94,18 @@ export interface AllianceContext {
   facts: (o: PlayerObs) => Record<string, unknown>;
 }
 
-export function routeQuestions(c: Candidates, unclaimed: number, troops: string, ally?: AllianceContext): Questions {
+// With a viewer-voted strategy in the state (`strategy`), route and goal lean on its doctrine.
+const DOCTRINE =
+  "`strategy.doctrine` is the playstyle the stream's viewers voted for: follow its spirit whenever doing so does not clearly risk losing";
+
+export function routeQuestions(c: Candidates, unclaimed: number, troops: string, ally?: AllianceContext, doctrine = false): Questions {
   const q: Questions = {
     route: choice(
       {
         role: WHO,
         question: "Which one action should I take right now to best improve my position?",
         consider: [
+          ...(doctrine ? [DOCTRINE] : []),
           "`memory.goal` is my current strategy; prefer actions that serve it unless the situation clearly changed",
           "`memory.recent_actions` shows what my last actions achieved",
           "`me.troop_status` says whether I have troops to spend; sending troops while low or depleted achieves little",
@@ -125,6 +130,7 @@ export function routeQuestions(c: Candidates, unclaimed: number, troops: string,
       {
         role: WHO,
         question: "Which overall strategy fits my situation best for the next few minutes?",
+        ...(doctrine ? { consider: [DOCTRINE] } : {}),
       },
       { ...GOALS },
     ),

@@ -1,0 +1,22 @@
+name: strategy
+
+on:
+  pull_request:
+    paths: ["strategies/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      # bunfig.toml preloads harness/preload.ts, which needs esbuild.
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/check-strategy.ts "origin/${{ github.base_ref }}"

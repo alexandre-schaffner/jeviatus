@@ -3,3 +3,6 @@ runs/
 .env
 .context/
 dist/
+# TikTok soundtracks (tiktok/README.md): bring your own, licensed
+music/
+.loop/

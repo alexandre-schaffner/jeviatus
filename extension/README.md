@@ -16,6 +16,16 @@ Enable the extension before the match begins. It can be toggled during play; Off
 
 The extension piggybacks on the page's own game WebSocket, so all authentication (Turnstile, tokens) is handled by the normal page flow. Singleplayer games run entirely inside the page without a WebSocket, so the extension cannot attach to them.
 
+## Logging games
+
+To keep a trace of every game you play with the extension (for `bun run analyze`), run a local sink:
+
+```sh
+bun run trace-sink
+```
+
+and paste the printed Trace URL and token into the popup. Each game lands in `runs/<ts>-extension-<gameID>/trace.jsonl`, in the same format as `bun run play`. The background worker posts to loopback only; with the Trace URL empty, nothing is logged.
+
 ## Compatibility
 
 The extension bundles the OpenFront wire codec and simulation from `vendor/OpenFrontIO`, pinned to the exact commit the server runs: the binary wire format has no version negotiation. The hosted service's commit is published in the page's `window.BOOTSTRAP_CONFIG.gitCommit`; the extension compares it against the bundled commit (stamped into `dist/jev-openfront-extension/BUILD.txt`) and stops, with the fix command in the page panel, when they differ. It also stops if game frames fail to decode, and warns when a hosted page reports no commit at all.

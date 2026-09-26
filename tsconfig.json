@@ -22,7 +22,9 @@
     "extension/**/*",
     "harness/**/*",
     "scripts/**/*",
+    "stream/**/*",
     "tests/**/*",
+    "tiktok/**/*",
     "vendor/OpenFrontIO/src/client/vite-env.d.ts"
   ]
 }

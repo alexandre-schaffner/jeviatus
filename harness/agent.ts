@@ -8,15 +8,16 @@ import type { Intent } from "src/core/Schemas";
 import { type Action, describe, resolve } from "./act/intents";
 import type { HarnessConfig } from "./config";
 import { buildCandidates, SeaReach } from "./decide/candidates";
-import { type Decision, Pipeline } from "./decide/pipeline";
+import { type CallTrace, type Decision, Pipeline } from "./decide/pipeline";
 import type { Jev } from "./jev/client";
-import type { Trace } from "./log/trace";
+import type { TraceSink } from "./log/format";
 import type { TokenBucket } from "./net/rateLimit";
 import { economy, IncomeTracker } from "./observe/economy";
 import { approxTokens, observe, RefBook } from "./observe/state";
 import { SectorGrid } from "./observe/sectors";
 import { decisionEvent, type OverlayEvent } from "./overlay/events";
 import type { Mirror } from "./sim/mirror";
+import type { Strategy } from "./strategy/doctrine";
 import { StrategyMemory, type Vitals } from "./strategy/memory";
 
 export interface AgentOptions {
@@ -29,11 +30,14 @@ export interface AgentOptions {
   // Checked immediately before every send. Browser integrations use this as
   // the hard stop for a toggle changed while a Jev request is in flight.
   canAct?: () => boolean;
-  trace?: Trace;
+  trace?: TraceSink;
   dryRun?: boolean;
   log?: (line: string) => void;
   // Live overlay feed: one event per decision step.
   onEvent?: (e: OverlayEvent) => void;
+  // Viewer-voted playstyle: Jev reads its doctrine as state, and its goal
+  // (if any) is the starting goal.
+  strategy?: Strategy;
 }
 
 export interface AgentSummary {
@@ -53,6 +57,21 @@ export interface AgentSummary {
   meanStaleTicks: number;
 }
 
+// Jev calls made by this agent's own steps, whatever client served them.
+export interface AgentJevStats {
+  calls: number;
+  failures: number;
+  inputTokens: number;
+  outputTokens: number;
+  meanLatencyMs: number;
+}
+
+// The last observed state, kept to explain an elimination after the fact.
+interface LastSeen {
+  me: Record<string, unknown>;
+  players: Record<string, unknown>[];
+}
+
 export class Agent {
   readonly memory = new StrategyMemory();
   private readonly refs = new RefBook();
@@ -69,9 +88,13 @@ export class Agent {
   // attack after breaking an alliance), retried every tick until it resolves.
   private followUp: { action: Action; until: number } | null = null;
   private stats = { steps: 0, skipped: 0, holds: 0, sent: 0, rejected: 0, stepMs: 0, staleTicks: 0, peak: 0 };
+  private jevStats = { calls: 0, failures: 0, inputTokens: 0, outputTokens: 0, latencyMs: 0 };
+  private last: LastSeen | null = null;
+  private finished = false;
 
   constructor(private readonly o: AgentOptions) {
     this.pipeline = new Pipeline(o.jev, { minConfidence: o.config.minConfidence });
+    if (o.strategy?.goal) this.memory.goal = o.strategy.goal;
   }
 
   private get game() {
@@ -92,6 +115,7 @@ export class Agent {
     if (!this.game.inSpawnPhase() && me.hasSpawned() && !me.isAlive() && this.deathTick === null) {
       this.deathTick = tick;
       this.log("eliminated");
+      this.traceDeath(tick);
     }
     this.tryFollowUp(me, tick);
     if (tick % this.o.config.decisionInterval !== 0) return;
@@ -141,9 +165,12 @@ export class Agent {
       seaReachable: new Set(reach.keys()),
       goldPerMin: this.income.rates.total,
       econ,
+      strategy: this.o.strategy,
     });
     const cands = buildCandidates(game, me, obs, reach, econ, this.memory.threat, this.memory.attackPeaks);
     this.stats.peak = Math.max(this.stats.peak, me.numTilesOwned() / Math.max(1, game.numLandTiles()));
+    const seen = obs.state as { me: Record<string, unknown>; players: Record<string, unknown>[] };
+    this.last = { me: seen.me, players: seen.players };
 
     const decision = await this.pipeline.step(game, me, obs, cands, this.memory, {
       game,
@@ -163,6 +190,7 @@ export class Agent {
     }
 
     const sent = this.act(me, decision);
+    this.countCalls(decision.calls);
     if (decision.record) this.memory.record({ tick, ...decision.record }, now);
     if (decision.held) this.stats.holds++;
     this.stats.steps++;
@@ -247,11 +275,67 @@ export class Agent {
     const obsState = { game: { tick, phase: "spawn", players: game.players().length, spawn_phase_ticks_left: spawnTurns - tick } };
     const decision = await this.pipeline.spawn(game, me, this.grid!, obsState, this.spawnAttempts - 1, current);
     const sent = this.act(me, decision);
+    this.countCalls(decision.calls);
     if (sent.some((s) => s.sent)) this.spawnSentAt = game.ticks();
     const what = current !== undefined ? "respawn check" : "spawn";
     this.log(`${what} conf=${decision.confidence.toFixed(2)} -> ${sent.map((s) => s.desc).join("; ") || decision.holdReason}`);
     this.publish(decision, { name: me.displayName() }, sent, 0, (k) => k);
     this.o.trace?.write({ type: "spawn", agent: this.o.name, tick: game.ticks(), recheck: current !== undefined, decision: { used: decision.used, record: decision.record, holdReason: decision.holdReason }, calls: decision.calls, intents: sent });
+  }
+
+  private countCalls(calls: CallTrace[]): void {
+    for (const c of calls) {
+      this.jevStats.calls++;
+      if (c.error !== undefined) this.jevStats.failures++;
+      this.jevStats.inputTokens += c.usage?.input_tokens ?? 0;
+      this.jevStats.outputTokens += c.usage?.output_tokens ?? 0;
+      this.jevStats.latencyMs += c.latencyMs;
+    }
+  }
+
+  // Who was on me when I fell, as of the last step that saw it.
+  private traceDeath(tick: number): void {
+    const last = this.last;
+    const byRef = new Map((last?.players ?? []).map((p) => [String(p.ref), p]));
+    const attackers = ((last?.me.under_attack_by as string[] | undefined) ?? []).map((ref) => {
+      const p = byRef.get(ref);
+      const id = this.refs.playerID(ref);
+      const threat = id === undefined ? undefined : this.memory.threat.get(id);
+      return {
+        ref,
+        name: p?.name ?? null,
+        troops_vs_mine: p?.troops_vs_mine ?? null,
+        threat: threat === undefined ? null : Math.round(threat * 10) / 10,
+      };
+    });
+    this.o.trace?.write({
+      type: "death",
+      agent: this.o.name,
+      tick,
+      minutes: Math.round((tick / 600) * 10) / 10,
+      landShareBefore: last?.me.land_share ?? null,
+      peakLandShare: Math.round(this.stats.peak * 10000) / 10000,
+      attackers,
+    });
+  }
+
+  jevSummary(): AgentJevStats {
+    const j = this.jevStats;
+    return {
+      calls: j.calls,
+      failures: j.failures,
+      inputTokens: j.inputTokens,
+      outputTokens: j.outputTokens,
+      meanLatencyMs: j.calls ? Math.round(j.latencyMs / j.calls) : 0,
+    };
+  }
+
+  // The closing summary event, written once. The CLI writes its own, richer
+  // one for the whole session instead.
+  finish(reason: string): void {
+    if (this.finished) return;
+    this.finished = true;
+    this.o.trace?.write({ type: "summary", tick: this.game.ticks(), agents: [this.summary()], reason, jev: this.jevSummary() });
   }
 
   private tryFollowUp(me: Player, tick: number): void {

@@ -12,6 +12,8 @@ interface ChromeStorageChange {
 // scripts/build-extension.ts via esbuild define. Compared against the page's
 // BOOTSTRAP_CONFIG.gitCommit to catch a stale wire codec.
 declare const __JEV_OPENFRONT_COMMIT__: string;
+// This repo's commit ("+dirty" for local changes), for the trace header.
+declare const __JEV_HARNESS_COMMIT__: string;
 
 declare const chrome: {
   storage: {

@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "description": "Runs the Jev strategy engine in OpenFront matches on openfront.io and local dev servers.",
   "permissions": ["storage"],
-  "host_permissions": ["https://api.typesafe.ai/*"],
+  "host_permissions": ["https://api.typesafe.ai/*", "http://127.0.0.1/*", "http://localhost/*"],
   "background": {
     "service_worker": "background.js"
   },

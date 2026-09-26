@@ -7,13 +7,14 @@ import type { GameConfig, GameStartInfo, Intent, StampedIntent } from "src/core/
 import { Agent, type AgentSummary } from "./agent";
 import type { HarnessConfig } from "./config";
 import type { Jev } from "./jev/client";
-import type { Trace } from "./log/trace";
+import type { TraceSink } from "./log/format";
 import { GameSocket } from "./net/client";
 import { createGame, workerPathFor, wsUrl } from "./net/http";
 import { TokenBucket } from "./net/rateLimit";
 import { FsMapLoader } from "./sim/mapLoader";
 import type { OverlayEvent } from "./overlay/events";
 import { Mirror } from "./sim/mirror";
+import type { Strategy } from "./strategy/doctrine";
 
 export interface GameOptions {
   map: GameMapType;
@@ -27,11 +28,14 @@ export interface SessionOptions {
   config: HarnessConfig;
   jevFor: (i: number) => Jev;
   agents: number;
-  trace?: Trace;
+  trace?: TraceSink;
+  // Once, when the game starts (before any agent acts): the trace header.
+  onStart?: (start: GameStartInfo) => void;
   dryRun?: boolean;
   maxMinutes: number;
   log: (line: string) => void;
   onEvent?: (e: OverlayEvent) => void;
+  strategy?: Strategy;
 }
 
 export interface SessionResult {
@@ -160,6 +164,7 @@ export async function runLive(
             onError: (e) => errors.push(`${name}: sim error ${e.errMsg}`),
           });
           seat.mirror = mirror;
+          if (i === 0) opts.onStart?.(m.gameStartInfo);
           seat.agent = new Agent({
             name,
             mirror,
@@ -171,6 +176,7 @@ export async function runLive(
             dryRun: opts.dryRun,
             log: opts.log,
             onEvent: opts.onEvent,
+            strategy: opts.strategy,
           });
           for (const t of m.turns) mirror.addTurn(t);
           for (const t of seat.buffered) mirror.addTurn(t);
@@ -282,6 +288,7 @@ export async function runOffline(
   const mirror = await Mirror.create(relay.start, relay.clientIDs[0], new FsMapLoader(opts.mapsDir, opts.fixedMapDir), {
     onError: (e) => errors.push(`sim error ${e.errMsg}`),
   });
+  opts.onStart?.(relay.start);
   const agents = relay.clientIDs.map((clientID, i) => {
     return new Agent({
       name: relay.start.players[i].username,
@@ -294,6 +301,7 @@ export async function runOffline(
       dryRun: opts.dryRun,
       log: opts.log,
       onEvent: opts.onEvent,
+      strategy: opts.strategy,
     });
   });
   const maxTicks = opts.maxMinutes * 600;

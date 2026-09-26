@@ -9,7 +9,16 @@
     "build:extension": "bun scripts/build-extension.ts",
     "pin:openfront": "bun scripts/pin-openfront.ts",
     "test": "bun test tests/*.test.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "trace-sink": "bun scripts/trace-sink.ts",
+    "analyze": "bun scripts/analyze.ts",
+    "improve": "bun scripts/improve.ts",
+    "stream:up": "OPENFRONT_COMMIT=$(git -C vendor/OpenFrontIO rev-parse HEAD) HARNESS_COMMIT=$(git rev-parse HEAD)$(git diff --quiet HEAD -- . ':!vendor' || echo +dirty) docker compose -f stream/compose.yml up -d --build",
+    "stream:logs": "docker compose -f stream/compose.yml logs -f --tail=100",
+    "tiktok": "bun tiktok/cli.ts",
+    "stream:down": "docker compose -f stream/compose.yml down",
+    "stream:mac": "STREAM_PLATFORM=mac bun stream/main.ts",
+    "live": "bun stream/launch.ts"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "0.6.0",

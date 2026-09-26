@@ -37,6 +37,14 @@
           <input id="confidence" type="number" min="0" max="1" step="0.05" />
         </label>
       </div>
+      <label>
+        Trace URL
+        <input id="traceUrl" type="url" spellcheck="false" placeholder="Off · e.g. http://127.0.0.1:9231/trace" />
+      </label>
+      <label>
+        Trace token
+        <input id="traceToken" type="password" autocomplete="off" placeholder="Printed by bun run trace-sink" />
+      </label>
       <button class="save" type="submit">Save settings</button>
       <p id="status" role="status">Runs on openfront.io and local dev servers.</p>
     </form>

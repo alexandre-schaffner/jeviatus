@@ -1,0 +1,23 @@
+# 24/7 Kick stream. Start with `bun run stream:up` (it passes OPENFRONT_COMMIT).
+name: jeviatus
+services:
+  stream:
+    build:
+      context: ..
+      dockerfile: stream/Dockerfile
+      args:
+        # Set by `bun run stream:up`; the Dockerfile refuses to build without it.
+        OPENFRONT_COMMIT: ${OPENFRONT_COMMIT:-}
+        HARNESS_COMMIT: ${HARNESS_COMMIT:-unknown}
+    image: jeviatus-stream
+    env_file: ../.env
+    restart: unless-stopped
+    # Chromium keeps its renderer memory in /dev/shm.
+    shm_size: 1gb
+    volumes:
+      - jev-data:/data
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+volumes:
+  jev-data:

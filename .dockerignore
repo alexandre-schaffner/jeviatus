@@ -1,0 +1,8 @@
+.git
+.context
+.env
+node_modules
+vendor
+dist
+runs
+**/.DS_Store

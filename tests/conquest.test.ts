@@ -2,7 +2,14 @@
 // a push sized by it must land the kill.
 
 import { describe, expect, test } from "bun:test";
+import fs from "node:fs";
+import path from "node:path";
 import type { Player } from "src/core/game/Game";
+import { Agent } from "../harness/agent";
+import { gameRow } from "../harness/analyze/report";
+import { parseTrace } from "../harness/analyze/load";
+import { Trace } from "../harness/log/trace";
+import { TokenBucket } from "../harness/net/rateLimit";
 import { buildCandidates, SeaReach } from "../harness/decide/candidates";
 import { FINISH_CAP, FINISH_CAP_UNDER_ATTACK, Pipeline, sizeAttack } from "../harness/decide/pipeline";
 import { economy, IncomeTracker } from "../harness/observe/economy";
@@ -11,7 +18,7 @@ import { StrategyMemory } from "../harness/strategy/memory";
 import { conquestEstimate, KILL_THRESHOLD_TILES } from "../harness/observe/conquest";
 import type { PlayerObs } from "../harness/observe/state";
 import { SectorGrid } from "../harness/observe/sectors";
-import { FakeJev, neighbors, type OfflineGame } from "./helpers";
+import { FakeJev, neighbors, type OfflineGame, testConfig } from "./helpers";
 
 let g: OfflineGame;
 let me: Player;
@@ -58,6 +65,49 @@ describe("conquest estimate", () => {
     const e = conquestEstimate(g.mirror.game, me, other);
     push(e.finishFraction! / 3);
     expect(other.isAlive()).toBe(true);
+  }, 120_000);
+});
+
+describe("game trace", () => {
+  test("the farmed player's agent traces its death with the attacker, then one summary", async () => {
+    await weakNeighbor();
+    const trace = new Trace(testConfig().runsDir, "death-test");
+    // The victim's own agent: observes and decides, never sends.
+    const victim = new Agent({
+      name: "JevTwo",
+      mirror: g.mirror.viewAs(g.relay.clientIDs[1]),
+      jev: new FakeJev(),
+      config: testConfig({ decisionInterval: 10 }),
+      bucket: new TokenBucket(140),
+      send: () => {},
+      dryRun: true,
+      trace,
+    });
+    const need = conquestEstimate(g.mirror.game, me, other).finishFraction!;
+    g.send({ type: "attack", targetID: other.id(), troops: Math.floor(me.troops() * need) });
+    for (let i = 0; i < 3000 && other.isAlive(); i++) {
+      g.step(1);
+      victim.onTick();
+      await victim.pending;
+    }
+    expect(other.isAlive()).toBe(false);
+    victim.onTick();
+    victim.finish("test over");
+    victim.finish("again");
+    await trace.close();
+
+    const text = fs.readFileSync(path.join(trace.dir, "trace.jsonl"), "utf8");
+    const events = text.trim().split("\n").map((l) => JSON.parse(l) as { type: string; attackers?: { name: string }[] });
+    expect(events.filter((e) => e.type === "death")).toHaveLength(1);
+    expect(events.find((e) => e.type === "death")!.attackers!.map((a) => a.name)).toEqual([me.displayName()]);
+    expect(events.filter((e) => e.type === "summary")).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({ type: "summary", reason: "test over", agents: [{ name: "JevTwo", alive: false }] });
+
+    // The analyzer reads it as an elimination by that attacker.
+    const [record] = parseTrace(text, trace.dir);
+    const row = gameRow(record);
+    expect(row.outcome).toBe("eliminated");
+    expect(row.causeOfDeath).toContain(me.displayName());
   }, 120_000);
 });
 
