@@ -33,13 +33,9 @@ export interface Grudge {
   count: number;
 }
 
-export interface MemoryOptions {
-  switchProbability: number; // goal switch needs p above this...
-  switchStreak: number; // ...on this many consecutive steps
-  maxRecent: number;
-}
-
-const DEFAULTS: MemoryOptions = { switchProbability: 0.6, switchStreak: 2, maxRecent: 6 };
+const SWITCH_PROBABILITY = 0.6; // goal switch needs p above this...
+const SWITCH_STREAK = 2; // ...on this many consecutive steps
+const MAX_RECENT = 6;
 
 function signed(n: number, unit: string): string {
   const r = Math.round(n);
@@ -56,12 +52,6 @@ export class StrategyMemory {
   readonly recent: ActionRecord[] = [];
   // Largest troop count seen per running attack of mine: how much it started with.
   readonly attackPeaks = new Map<string, number>();
-  private lastVitals: Vitals | null = null;
-  private readonly opts: MemoryOptions;
-
-  constructor(opts: Partial<MemoryOptions> = {}) {
-    this.opts = { ...DEFAULTS, ...opts };
-  }
 
   // Hysteresis: a different goal must win with p > threshold on N
   // consecutive steps before it replaces the current one. Returns true on switch.
@@ -74,12 +64,12 @@ export class StrategyMemory {
         bestP = p;
       }
     }
-    if (best === this.goal || bestP <= this.opts.switchProbability) {
+    if (best === this.goal || bestP <= SWITCH_PROBABILITY) {
       this.pending = null;
       return false;
     }
     this.pending = this.pending?.goal === best ? { goal: best, streak: this.pending.streak + 1 } : { goal: best, streak: 1 };
-    if (this.pending.streak >= this.opts.switchStreak) {
+    if (this.pending.streak >= SWITCH_STREAK) {
       this.goal = best;
       this.goalSinceTick = tick;
       this.pending = null;
@@ -119,19 +109,14 @@ export class StrategyMemory {
         signed(now.gold - last.before.gold, "gold"),
       ].join(", ");
     }
-    this.lastVitals = now;
   }
 
   record(rec: Omit<ActionRecord, "before">, before: Vitals): void {
     this.recent.push({ ...rec, before });
-    while (this.recent.length > this.opts.maxRecent) this.recent.shift();
+    while (this.recent.length > MAX_RECENT) this.recent.shift();
     if (rec.action === "attack_player" || rec.action === "naval_invasion" || rec.action === "nuke" || rec.action === "break_alliance") {
       this.warTarget = rec.targetID ?? this.warTarget;
     }
-  }
-
-  vitals(): Vitals | null {
-    return this.lastVitals;
   }
 
   // The memory block of the observation. `refOf` maps player IDs to the refs

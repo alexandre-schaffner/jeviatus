@@ -3,7 +3,6 @@ import { DEFAULT_SETTINGS, normalizeSettings } from "./settings";
 
 interface JevRequest {
   type: "jev:ask";
-  label: string;
   state: unknown;
   questions: unknown;
 }

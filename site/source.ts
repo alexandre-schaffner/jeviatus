@@ -6,7 +6,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
-import { parsePromptFile, type PromptFile, QUESTIONS_FILE, sourceFile, stringRecord, textOf, unwrap, walk } from "../governance/prompts";
+import { DEFAULTS } from "../harness/config";
+import { parsePromptFile, type PromptFile, QUESTIONS_FILE, sourceFile, stringRecord, unwrap, walk } from "../governance/prompts";
 
 const ROOT = join(import.meta.dir, "..");
 const read = (file: string) => readFileSync(join(ROOT, file), "utf8");
@@ -71,21 +72,6 @@ function constArrays(file: string, names: string[]): Record<string, number[]> {
   return out;
 }
 
-// Defaults in harness/config.ts: `name: num("ENV", 0.35)` and the model name.
-function config(): { numbers: Record<string, number>; model: string } {
-  const numbers: Record<string, number> = {};
-  let model = "";
-  walk(parse("harness/config.ts"), (n) => {
-    if (!ts.isPropertyAssignment(n) || !ts.isIdentifier(n.name)) return;
-    if (ts.isCallExpression(n.initializer)) {
-      const [, fallback] = n.initializer.arguments;
-      if (fallback && ts.isNumericLiteral(fallback)) numbers[n.name.text] = Number(fallback.text);
-    }
-    if (n.name.text === "model" && ts.isBinaryExpression(n.initializer)) model = textOf(n.initializer.right) ?? "";
-  });
-  return { numbers, model };
-}
-
 const git = (...args: string[]) => Bun.spawnSync(["git", ...args], { cwd: ROOT }).stdout.toString().trim();
 
 export function source(): Source {
@@ -105,7 +91,7 @@ export function source(): Source {
       line: p.line,
     };
   }
-  const cfg = config();
+  const { model, ...defaults } = DEFAULTS;
   return {
     repo: "https://github.com/alexandre-schaffner/jeviatus",
     file: QUESTIONS_FILE,
@@ -115,9 +101,9 @@ export function source(): Source {
     goals: constObject("harness/strategy/memory.ts", "GOALS"),
     constants: {
       ...constNumbers("harness/decide/pipeline.ts", ["FALLBACK_MIN_P", "FINISH_CAP", "FINISH_CAP_UNDER_ATTACK", "BOAT_MAX_FRACTION"]),
-      ...cfg.numbers,
+      ...defaults,
     },
-    model: cfg.model,
+    model,
     commit: constArrays(QUESTIONS_FILE, ["ATTACK_COMMIT", "EXPAND_COMMIT"]),
     sha: git("rev-parse", "--short", "HEAD"),
   };

@@ -16,7 +16,7 @@ export interface BridgeSend {
 
 export type ExtensionToPage = BridgeHello | BridgeSend;
 
-export interface BridgeFrame {
+interface BridgeFrame {
   bridge: typeof BRIDGE;
   direction: "page-to-extension";
   type: "frame";
@@ -38,15 +38,14 @@ export interface BridgeBootstrap {
   mapManifest?: Record<string, string>;
 }
 
-export interface BridgeSocketState {
+interface BridgeSocketClose {
   bridge: typeof BRIDGE;
   direction: "page-to-extension";
-  type: "socket-open" | "socket-close";
+  type: "socket-close";
   socketId: number;
-  url: string;
 }
 
-export type PageToExtension = BridgeFrame | BridgeSocketState | BridgeBootstrap;
+export type PageToExtension = BridgeFrame | BridgeSocketClose | BridgeBootstrap;
 
 export function isPageMessage(value: unknown): value is PageToExtension {
   if (typeof value !== "object" || value === null) return false;

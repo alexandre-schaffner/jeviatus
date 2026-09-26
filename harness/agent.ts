@@ -6,7 +6,7 @@ import type { Player } from "src/core/game/Game";
 import type { TileRef } from "src/core/game/GameMap";
 import type { Intent } from "src/core/Schemas";
 import { type Action, describe, resolve } from "./act/intents";
-import type { HarnessConfig } from "./config";
+import type { AgentConfig } from "./config";
 import { buildCandidates, SeaReach } from "./decide/candidates";
 import { type Decision, Pipeline } from "./decide/pipeline";
 import type { Jev } from "./jev/client";
@@ -23,7 +23,7 @@ export interface AgentOptions {
   name: string;
   mirror: Mirror;
   jev: Jev;
-  config: HarnessConfig;
+  config: AgentConfig;
   bucket: TokenBucket;
   send: (intent: Intent) => void;
   // Checked immediately before every send. Browser integrations use this as
@@ -134,7 +134,6 @@ export class Agent {
     const obs = observe({
       game,
       me,
-      grid: this.grid,
       scan,
       refs: this.refs,
       memory: this.memory,

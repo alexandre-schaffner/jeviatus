@@ -50,10 +50,7 @@ function publish(message: PageToExtension, transfer: Transferable[] = []): void 
 function track(socket: WebSocket): WebSocket {
   const socketId = nextSocketId++;
   sockets.set(socketId, socket);
-  socket.addEventListener("open", () => {
-    publish({ bridge: BRIDGE, direction: "page-to-extension", type: "socket-open", socketId, url: socket.url });
-    publish(bootstrapMessage(socketId));
-  });
+  socket.addEventListener("open", () => publish(bootstrapMessage(socketId)));
   socket.addEventListener("message", (event) => {
     if (!(event.data instanceof ArrayBuffer)) return;
     const frame = event.data.slice(0);
@@ -61,7 +58,7 @@ function track(socket: WebSocket): WebSocket {
   });
   socket.addEventListener("close", () => {
     sockets.delete(socketId);
-    publish({ bridge: BRIDGE, direction: "page-to-extension", type: "socket-close", socketId, url: socket.url });
+    publish({ bridge: BRIDGE, direction: "page-to-extension", type: "socket-close", socketId });
   });
   return socket;
 }

@@ -8,15 +8,14 @@ import type { TileRef } from "src/core/game/GameMap";
 import type { StrategyMemory } from "../strategy/memory";
 import { type ConquestEstimate, conquestEstimate } from "./conquest";
 import type { EconomySnapshot } from "./economy";
-import { compass, type Scan, type SectorGrid } from "./sectors";
+import { compass, type Scan } from "./sectors";
 
-export const MAX_PLAYERS = 15;
+const MAX_PLAYERS = 15;
 
 // Stable short refs ("P1", "P2", ...) for players, kept for the whole game so
 // memory and consecutive observations refer to the same player the same way.
 export class RefBook {
   private readonly byID = new Map<string, string>();
-  private readonly byRef = new Map<string, string>();
   private next = 1;
 
   ref(playerID: string): string {
@@ -24,17 +23,12 @@ export class RefBook {
     if (r === undefined) {
       r = `P${this.next++}`;
       this.byID.set(playerID, r);
-      this.byRef.set(r, playerID);
     }
     return r;
   }
 
   peek(playerID: string): string | undefined {
     return this.byID.get(playerID);
-  }
-
-  playerID(ref: string): string | undefined {
-    return this.byRef.get(ref);
   }
 }
 
@@ -43,7 +37,6 @@ export interface PlayerObs {
   player: Player;
   json: Record<string, unknown>;
   bordersMe: boolean;
-  seaReachable: boolean;
   attackingMe: boolean;
   // Land neighbors I can attack: what finishing them pays and costs.
   conquest: ConquestEstimate | null;
@@ -64,7 +57,6 @@ export interface Observation {
 export interface ObserveInput {
   game: Game;
   me: Player;
-  grid: SectorGrid;
   scan: Scan;
   refs: RefBook;
   memory: StrategyMemory;
@@ -98,7 +90,7 @@ const thousands = (n: number) => Math.round(n / 1000);
 // Shares of the map start tiny; keep 4 decimals so early growth is visible.
 const r4 = (n: number) => Math.round(n * 10000) / 10000;
 
-export const STRUCTURE_TYPES = [
+const STRUCTURE_TYPES = [
   UnitType.City,
   UnitType.Port,
   UnitType.Factory,
@@ -271,7 +263,7 @@ export function observe(input: ObserveInput): Observation {
       };
     }
     if (conquest !== null) json.conquest = conquestJson(conquest, goldPerMin, (id) => refs.ref(id));
-    return { ref, player: p, json, bordersMe, seaReachable: sea, attackingMe, conquest };
+    return { ref, player: p, json, bordersMe, attackingMe, conquest };
   });
 
   const refOf = (id: string) => refs.peek(id);

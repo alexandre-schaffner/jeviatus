@@ -16,7 +16,6 @@ import type { ClientID, GameStartInfo, Turn } from "src/core/Schemas";
 
 export interface MirrorEvents {
   onHash?: (tick: number, hash: number) => void;
-  onWin?: (win: WinUpdate) => void;
   onError?: (err: ErrorUpdate) => void;
 }
 
@@ -98,7 +97,6 @@ export class Mirror {
     }
     for (const w of gu.updates[GameUpdateType.Win] as WinUpdate[]) {
       this.winner = w;
-      this.events.onWin?.(w);
     }
   }
 }
