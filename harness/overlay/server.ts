@@ -12,12 +12,11 @@ export class OverlayServer {
   private readonly latest = new Map<string, OverlayEvent>();
   private readonly enc = new TextEncoder();
   private gameUrl: string | null = null;
-  private server: ReturnType<typeof Bun.serve> | null = null;
 
   constructor(readonly port: number) {}
 
   start(): void {
-    this.server = Bun.serve({
+    Bun.serve({
       port: this.port,
       idleTimeout: 0, // SSE streams stay open
       fetch: (req) => {
@@ -79,9 +78,5 @@ export class OverlayServer {
         this.clients.delete(c);
       }
     }
-  }
-
-  stop(): void {
-    this.server?.stop(true);
   }
 }

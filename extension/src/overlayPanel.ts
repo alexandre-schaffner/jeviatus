@@ -1,6 +1,6 @@
 import type { OverlayEvent } from "../../harness/overlay/events";
 
-export type StatusTone = "idle" | "ok" | "warn" | "error";
+type StatusTone = "idle" | "ok" | "warn" | "error";
 
 export interface OverlayStatus {
   tone: StatusTone;

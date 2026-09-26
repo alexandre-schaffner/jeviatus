@@ -4,6 +4,7 @@ import type { ClientID, ServerMessage, Turn } from "src/core/Schemas";
 import { FetchGameMapLoader } from "src/core/game/FetchGameMapLoader";
 import { createGameWireContext, decodeServerMessage, encodeClientMessage } from "src/core/ZbinWire";
 import { Agent } from "../../harness/agent";
+import { DEFAULTS } from "../../harness/config";
 import type { Jev } from "../../harness/jev/client";
 import { runHeader } from "../../harness/log/format";
 import { TokenBucket } from "../../harness/net/rateLimit";
@@ -13,13 +14,7 @@ import { checkBuild, REPIN_COMMAND, short } from "./compat";
 import { jevFailureStatus } from "./jevErrors";
 import { ExtensionTraceSink } from "./traceSink";
 import { OverlayPanel, type OverlayStatus } from "./overlayPanel";
-import {
-  PUBLIC_SETTINGS_DEFAULTS,
-  type ExtensionSettings,
-  isAllowedHost,
-  normalizeSettings,
-  toHarnessConfig,
-} from "./settings";
+import { PUBLIC_SETTINGS_DEFAULTS, type ExtensionSettings, normalizeSettings } from "./settings";
 
 interface JevResponse<T> {
   ok: boolean;
@@ -35,19 +30,10 @@ class BackgroundJev implements Jev {
     private readonly onRecover: () => void,
   ) {}
 
-  async ask<const Q extends Questions>(
-    label: string,
-    state: EntryType,
-    questions: Q,
-  ): Promise<SystemOneResult<Q>> {
+  async ask<const Q extends Questions>(_label: string, state: EntryType, questions: Q): Promise<SystemOneResult<Q>> {
     let response: JevResponse<SystemOneResult<Q>> | undefined;
     try {
-      response = await chrome.runtime.sendMessage<JevResponse<SystemOneResult<Q>>>({
-        type: "jev:ask",
-        label,
-        state,
-        questions,
-      });
+      response = await chrome.runtime.sendMessage<JevResponse<SystemOneResult<Q>>>({ type: "jev:ask", state, questions });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.fail(message);
@@ -85,7 +71,6 @@ class CapturedGame {
   private generation = 0;
   private bootstrap: BridgeBootstrap | undefined;
   private blocked = false;
-  private attachFailed = false;
   private decodeFailures = 0;
   private trace: ExtensionTraceSink | null = null;
   private finished = false;
@@ -105,17 +90,17 @@ class CapturedGame {
     this.bootstrap = bootstrap;
     this.panel.setBuild(__JEV_OPENFRONT_COMMIT__, bootstrap.gitCommit);
     const check = checkBuild(bootstrap.gitCommit, __JEV_OPENFRONT_COMMIT__, location.hostname);
-    if (check.kind === "mismatch") {
+    if (check === "mismatch") {
       // The wire format and sim are commit-specific: feeding this game's
       // frames into a foreign codec desyncs the mirror (it crashes ticks
       // later). Block instead.
       this.block({
         tone: "error",
         title: "OpenFront updated",
-        detail: `This page runs ${short(check.page)}, the extension bundles ${short(check.bundled)}. Jev stays off until you rebuild.`,
+        detail: `This page runs ${short(bootstrap.gitCommit)}, the extension bundles ${short(__JEV_OPENFRONT_COMMIT__)}. Jev stays off until you rebuild.`,
         hint: REPIN_COMMAND,
       });
-    } else if (check.kind === "unknown") {
+    } else if (check === "unverified") {
       // Not a block: the decode guard still catches a real mismatch. But a
       // silent pass here is how a stale bundle once went unnoticed.
       this.panel.show({
@@ -193,12 +178,12 @@ class CapturedGame {
       else void this.start(message);
       return;
     }
-    if (message.type !== "turn" || this.attachFailed) return;
+    if (message.type !== "turn") return;
     if (this.mirror === null) {
       this.queuedTurns.push(message.turn);
       return;
     }
-    this.advance(message.turn);
+    this.advance(this.mirror, message.turn);
   }
 
   reconfigure(settings: ExtensionSettings): void {
@@ -229,7 +214,7 @@ class CapturedGame {
   // mirror. Keep this one for the new socket instead. False: nothing worth
   // keeping (no match running), close as usual.
   detach(): boolean {
-    return this.mirror !== null && this.gameID !== null && !this.attachFailed && !this.finished;
+    return this.mirror !== null && this.gameID !== null && !this.finished;
   }
 
   rebind(socketId: number, bootstrap: BridgeBootstrap | undefined): void {
@@ -241,22 +226,19 @@ class CapturedGame {
     this.context = createGameWireContext(message.gameStartInfo.players);
     this.trace?.write({ type: "reconnect", tick: this.mirror?.ticks() ?? null, resentTurns: message.turns.length });
     console.info(`[Jev extension] reconnected to ${message.gameStartInfo.gameID}; resuming at tick ${this.mirror?.ticks()}`);
-    for (const turn of message.turns) this.advance(turn);
+    const mirror = this.mirror!;
+    for (const turn of message.turns) this.advance(mirror, turn);
     this.panel.show(this.playing());
   }
 
+  // The panel is shared by every socket: only a game socket may lift its own
+  // stop condition (closing the lobby feed must not clear a game's error).
   close(): void {
     this.finish("socket closed");
     void this.trace?.close();
     this.trace = null;
     this.generation++;
-    this.mirror = null;
-    this.agent = null;
-    this.queuedTurns = [];
-    this.blocked = false;
-    this.attachFailed = false;
-    this.decodeFailures = 0;
-    this.panel.unblock();
+    if (this.blocked && this.isGameSocket()) this.panel.unblock();
   }
 
   private async start(message: Extract<ServerMessage, { type: "start" }>): Promise<void> {
@@ -289,12 +271,11 @@ class CapturedGame {
     }
   }
 
-  private advance(turn: Turn): void {
-    if (this.mirror === null) return; // broken earlier: don't keep feeding it
+  private advance(mirror: Mirror, turn: Turn): void {
     try {
-      this.mirror.addTurn(turn);
+      mirror.addTurn(turn);
       if (this.isEnabled()) this.agent?.onTick();
-      if (this.mirror.winner !== null) this.finish("winner");
+      if (mirror.winner !== null) this.finish("winner");
     } catch (error) {
       // A crashed mirror never recovers and its state can no longer be
       // trusted: surface it loudly and drop every later turn.
@@ -308,7 +289,6 @@ class CapturedGame {
   private fail(title: string, detail: string): void {
     this.trace?.write({ type: "error", tick: this.mirror?.ticks() ?? null, title, detail });
     this.finished = true; // the agent's state is no longer worth summarizing
-    this.attachFailed = true;
     this.mirror = null;
     this.agent = null;
     this.queuedTurns = [];
@@ -320,12 +300,12 @@ class CapturedGame {
     void this.trace?.close();
     this.finished = false;
     this.trace = new ExtensionTraceSink(start.gameID);
-    const config = toHarnessConfig(this.settings);
+    const { decisionInterval, minConfidence } = this.settings;
     this.trace.write({
       ...runHeader(start, {
         source: "extension",
-        model: config.model,
-        config: { ...config, typesafeApiKey: undefined, openfrontUrl: location.origin },
+        model: this.settings.model,
+        config: { decisionInterval, minConfidence, maxIntentsPerStep: DEFAULTS.maxIntentsPerStep, intentsPerMinute: DEFAULTS.intentsPerMinute, openfrontUrl: location.origin },
         strategy: this.settings.strategy,
         harnessCommit: __JEV_HARNESS_COMMIT__,
         openfrontCommit: __JEV_OPENFRONT_COMMIT__,
@@ -346,8 +326,8 @@ class CapturedGame {
       name: "Jev",
       mirror,
       jev: this.jev,
-      config: toHarnessConfig(this.settings),
-      bucket: new TokenBucket(140),
+      config: { ...this.settings, maxIntentsPerStep: DEFAULTS.maxIntentsPerStep },
+      bucket: new TokenBucket(DEFAULTS.intentsPerMinute),
       canAct: this.isEnabled,
       trace: this.trace ?? undefined,
       send: (intent) => {
@@ -377,7 +357,6 @@ function errorMessage(error: unknown): string {
 }
 
 async function main(): Promise<void> {
-  if (!isAllowedHost(location.hostname)) return;
   let settings = normalizeSettings(await chrome.storage.local.get(PUBLIC_SETTINGS_DEFAULTS));
   const panel = new OverlayPanel((enabled) => void chrome.storage.local.set({ enabled }));
   const games = new Map<number, CapturedGame>();
@@ -410,12 +389,20 @@ async function main(): Promise<void> {
 
   const bootstraps = new Map<number, BridgeBootstrap>();
   const detached = new Map<string, { game: CapturedGame; expiry: ReturnType<typeof setTimeout> }>();
+  const gameFor = (socketId: number): CapturedGame => {
+    let game = games.get(socketId);
+    if (game === undefined) {
+      game = new CapturedGame(socketId, jev, panel, settings, () => settings.enabled);
+      games.set(socketId, game);
+    }
+    return game;
+  };
   window.addEventListener("message", (event: MessageEvent) => {
     if (event.source !== window || event.origin !== location.origin || !isPageMessage(event.data)) return;
     const message = event.data;
     if (message.type === "bootstrap") {
       bootstraps.set(message.socketId, message);
-      games.get(message.socketId)?.setBootstrap(message);
+      gameFor(message.socketId).setBootstrap(message);
       return;
     }
     if (message.type === "socket-close") {
@@ -433,14 +420,8 @@ async function main(): Promise<void> {
       } else closed?.close();
       return;
     }
-    if (message.type !== "frame" || !(message.frame instanceof ArrayBuffer)) return;
-    let game = games.get(message.socketId);
-    if (game === undefined) {
-      game = new CapturedGame(message.socketId, jev, panel, settings, () => settings.enabled);
-      const bootstrap = bootstraps.get(message.socketId);
-      if (bootstrap !== undefined) game.setBootstrap(bootstrap);
-      games.set(message.socketId, game);
-    }
+    if (!(message.frame instanceof ArrayBuffer)) return;
+    const game = gameFor(message.socketId);
     const decoded = game.decode(message.frame);
     if (decoded === null) return;
     // A reconnect: this socket's start names a game we're already mirroring.

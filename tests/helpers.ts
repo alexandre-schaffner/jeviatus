@@ -80,7 +80,7 @@ export interface OfflineGame {
 export async function offlineGame(opts: { nations?: number; spawnImmunity?: number; agents?: number } = {}): Promise<OfflineGame> {
   const relay = new LocalRelay({ map: GameMapType.World, nations: opts.nations ?? 6, difficulty: Difficulty.Easy, tribes: 0 }, opts.agents ?? 1);
   relay.start.config.spawnImmunityDuration = opts.spawnImmunity ?? 0;
-  const mirror = await Mirror.create(relay.start, relay.clientIDs[0], new FsMapLoader(undefined, path.join(TEST_MAPS_DIR, "world")));
+  const mirror = await Mirror.create(relay.start, relay.clientIDs[0], new FsMapLoader(path.join(TEST_MAPS_DIR, "world")));
   let turn = 0;
   return {
     relay,

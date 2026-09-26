@@ -16,16 +16,16 @@
 import { type Game, type Player, PlayerType, type Unit, UnitType } from "src/core/game/Game";
 import type { TileRef } from "src/core/game/GameMap";
 
-export type Rel = "self" | "ally" | "other" | "embargoed";
+type Rel = "self" | "ally" | "other" | "embargoed";
 
-export function relOf(me: Player, owner: Player): Rel {
+function relOf(me: Player, owner: Player): Rel {
   if (owner === me) return "self";
   if (!me.canTrade(owner)) return "embargoed";
   if (me.isAlliedWith(owner) || me.isOnSameTeam(owner)) return "ally";
   return "other";
 }
 
-export const TRAIN_STOP_GOLD: Record<Rel, number> = { self: 10_000, ally: 35_000, other: 25_000, embargoed: 0 };
+const TRAIN_STOP_GOLD: Record<Rel, number> = { self: 10_000, ally: 35_000, other: 25_000, embargoed: 0 };
 
 const STATION_TYPES = [UnitType.City, UnitType.Port, UnitType.Factory] as const;
 

@@ -1,4 +1,4 @@
-import type { HarnessConfig } from "../../harness/config";
+import { DEFAULTS } from "../../harness/config";
 import { parseStrategy, type Strategy } from "../../harness/strategy/doctrine";
 
 export interface ExtensionSettings {
@@ -19,9 +19,9 @@ export interface ExtensionSettings {
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabled: false,
   apiKey: "",
-  model: "jev-1.13.0",
-  decisionInterval: 15,
-  minConfidence: 0.35,
+  model: DEFAULTS.model,
+  decisionInterval: DEFAULTS.decisionInterval,
+  minConfidence: DEFAULTS.minConfidence,
   strategy: null,
   traceUrl: "",
   traceToken: "",
@@ -30,13 +30,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
 // Content scripts intentionally do not request the API key (or the trace
 // sink's address and token) from extension storage. Only the popup (where they
 // are entered) and background worker (where they are used) need them.
-export const PUBLIC_SETTINGS_DEFAULTS = {
-  enabled: DEFAULT_SETTINGS.enabled,
-  model: DEFAULT_SETTINGS.model,
-  decisionInterval: DEFAULT_SETTINGS.decisionInterval,
-  minConfidence: DEFAULT_SETTINGS.minConfidence,
-  strategy: DEFAULT_SETTINGS.strategy,
-};
+const { apiKey: _key, traceUrl: _url, traceToken: _token, ...publicDefaults } = DEFAULT_SETTINGS;
+export const PUBLIC_SETTINGS_DEFAULTS = publicDefaults;
 
 function finiteNumber(value: unknown, fallback: number): number {
   const number = typeof value === "number" ? value : Number(value);
@@ -71,27 +66,4 @@ function strategyOrNull(value: unknown): Strategy | null {
   if (value === null || value === undefined) return null;
   const parsed = parseStrategy(value);
   return parsed.ok ? parsed.strategy : null;
-}
-
-export function isAllowedHost(hostname: string): boolean {
-  return (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "openfront.io" ||
-    hostname.endsWith(".openfront.io")
-  );
-}
-
-export function toHarnessConfig(settings: ExtensionSettings): HarnessConfig {
-  return {
-    typesafeApiKey: undefined,
-    model: settings.model,
-    openfrontUrl: location.origin,
-    decisionInterval: settings.decisionInterval,
-    minConfidence: settings.minConfidence,
-    goalSwitchProbability: 0.6,
-    maxIntentsPerStep: 5,
-    intentsPerMinute: 140,
-    runsDir: "",
-  };
 }

@@ -1,21 +1,26 @@
 // Environment and defaults. Bun loads .env automatically.
 
-export interface HarnessConfig {
-  typesafeApiKey: string | undefined;
-  model: string;
-  openfrontUrl: string;
+// Shared with the extension, which has no environment.
+export const DEFAULTS = {
+  model: "jev-1.13.0",
   // Ticks between decision steps (1 tick = 100 ms).
-  decisionInterval: number;
+  decisionInterval: 15,
   // Below this weakest-link confidence the step falls back to `hold`.
-  minConfidence: number;
-  // Goal switches need p above this on two consecutive steps.
-  goalSwitchProbability: number;
+  minConfidence: 0.35,
   // Intents sent per decision step, at most.
-  maxIntentsPerStep: number;
+  maxIntentsPerStep: 5,
   // Token bucket: the server allows 150 intents/min; stay under it.
-  intentsPerMinute: number;
+  intentsPerMinute: 140,
+};
+
+export type HarnessConfig = typeof DEFAULTS & {
+  typesafeApiKey: string | undefined;
+  openfrontUrl: string;
   runsDir: string;
-}
+};
+
+// What a single Agent reads.
+export type AgentConfig = Pick<HarnessConfig, "decisionInterval" | "minConfidence" | "maxIntentsPerStep">;
 
 function num(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -28,13 +33,12 @@ function num(name: string, fallback: number): number {
 export function loadConfig(): HarnessConfig {
   return {
     typesafeApiKey: process.env.TYPESAFE_API_KEY,
-    model: process.env.JEV_MODEL ?? "jev-1.13.0",
+    model: process.env.JEV_MODEL ?? DEFAULTS.model,
     openfrontUrl: (process.env.OPENFRONT_URL ?? "http://localhost:9000").replace(/\/+$/, ""),
-    decisionInterval: num("DECISION_INTERVAL", 15),
-    minConfidence: num("MIN_CONFIDENCE", 0.35),
-    goalSwitchProbability: num("GOAL_SWITCH_P", 0.6),
-    maxIntentsPerStep: num("MAX_INTENTS_PER_STEP", 5),
-    intentsPerMinute: num("INTENTS_PER_MINUTE", 140),
+    decisionInterval: num("DECISION_INTERVAL", DEFAULTS.decisionInterval),
+    minConfidence: num("MIN_CONFIDENCE", DEFAULTS.minConfidence),
+    maxIntentsPerStep: num("MAX_INTENTS_PER_STEP", DEFAULTS.maxIntentsPerStep),
+    intentsPerMinute: num("INTENTS_PER_MINUTE", DEFAULTS.intentsPerMinute),
     runsDir: process.env.RUNS_DIR ?? "runs",
   };
 }

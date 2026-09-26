@@ -23,7 +23,7 @@ export interface JevStats {
   byLabel: Record<string, { calls: number; latencyMs: number }>;
 }
 
-export function emptyStats(): JevStats {
+function emptyStats(): JevStats {
   return { calls: 0, failures: 0, inputTokens: 0, outputTokens: 0, totalLatencyMs: 0, maxLatencyMs: 0, byLabel: {} };
 }
 
@@ -34,7 +34,8 @@ export class JevClient implements Jev {
   constructor(
     readonly model: string,
     apiKey?: string,
-    // Decisions go stale fast; don't let retries stretch a call past a few seconds.
+    // Decisions go stale fast; don't let retries stretch a call past a few
+    // seconds. Offline callers (tiktok/) can afford to wait longer.
     timeoutMs = 4_000,
   ) {
     this.client = new TypeSafeClient({
