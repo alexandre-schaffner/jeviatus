@@ -19,11 +19,6 @@ export class TokenBucket {
     this.last = t;
   }
 
-  available(): number {
-    this.refill();
-    return Math.floor(this.tokens);
-  }
-
   tryTake(): boolean {
     this.refill();
     if (this.tokens < 1) return false;

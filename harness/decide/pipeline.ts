@@ -444,9 +444,9 @@ export class Pipeline {
   }
 }
 
-export const BOAT_MAX_FRACTION = 0.3;
+const BOAT_MAX_FRACTION = 0.3;
 // Side push at a tribe that no single push can finish.
-export const TRIBE_PUSH = 0.15;
+const TRIBE_PUSH = 0.15;
 
 // Trim a troop-spending action to the step's budget. Null: nothing left to send.
 function applyBudget(action: Action, budget: TroopBudget): { share: number; cut: boolean } | null {
@@ -540,4 +540,3 @@ function hold(route: Decision["route"], reason: string, calls: CallTrace[]): Dec
   return { route, actions: [], confidence: 0, used: {}, preferences: {}, held: true, holdReason: reason, record: { action: "hold", detail: reason }, calls };
 }
 
-export type { BuildOption };

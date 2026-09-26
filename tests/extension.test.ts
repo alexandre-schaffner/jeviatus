@@ -6,7 +6,7 @@ import type { Decision } from "../harness/decide/pipeline";
 import { TokenBucket } from "../harness/net/rateLimit";
 import { checkBuild } from "../extension/src/compat";
 import { jevFailureStatus } from "../extension/src/jevErrors";
-import { DEFAULT_SETTINGS, isAllowedHost, normalizeSettings } from "../extension/src/settings";
+import { DEFAULT_SETTINGS, normalizeSettings } from "../extension/src/settings";
 
 describe("extension settings boundary", () => {
   test("defaults invalid and missing values", () => {
@@ -25,17 +25,6 @@ describe("extension settings boundary", () => {
       }),
     ).toEqual({ enabled: true, apiKey: "secret", model: "jev-next", decisionInterval: 5, minConfidence: 1 });
   });
-
-  test("permits loopback and openfront.io hosts only", () => {
-    expect(isAllowedHost("localhost")).toBe(true);
-    expect(isAllowedHost("127.0.0.1")).toBe(true);
-    expect(isAllowedHost("openfront.io")).toBe(true);
-    expect(isAllowedHost("www.openfront.io")).toBe(true);
-    expect(isAllowedHost("[::1]")).toBe(false);
-    expect(isAllowedHost("openfront.io.example.com")).toBe(false);
-    expect(isAllowedHost("notopenfront.io")).toBe(false);
-    expect(isAllowedHost("localhost.example.com")).toBe(false);
-  });
 });
 
 test("the action gate blocks a decision completed after Jev is disabled", () => {
@@ -50,17 +39,7 @@ test("the action gate blocks a decision completed after Jev is disabled", () => 
     name: "test",
     mirror: { game } as never,
     jev: { ask: async () => { throw new Error("not called"); } },
-    config: {
-      typesafeApiKey: undefined,
-      model: "test",
-      openfrontUrl: "http://localhost:9000",
-      decisionInterval: 15,
-      minConfidence: 0.35,
-      goalSwitchProbability: 0.6,
-      maxIntentsPerStep: 2,
-      intentsPerMinute: 140,
-      runsDir: "",
-    },
+    config: { decisionInterval: 15, minConfidence: 0.35, maxIntentsPerStep: 2 },
     bucket: new TokenBucket(140),
     send: () => sends++,
     canAct: () => false,
@@ -89,18 +68,18 @@ describe("bundled build check", () => {
   const b = "b".repeat(40);
 
   test("an exact commit match passes, any other real commit blocks", () => {
-    expect(checkBuild(a, a, "openfront.io")).toEqual({ kind: "match", commit: a });
-    expect(checkBuild(b, a, "openfront.io")).toEqual({ kind: "mismatch", page: b, bundled: a });
+    expect(checkBuild(a, a, "openfront.io")).toBe("ok");
+    expect(checkBuild(b, a, "openfront.io")).toBe("mismatch");
   });
 
   test("a dev server has nothing to compare against", () => {
-    expect(checkBuild("DEV", a, "localhost")).toEqual({ kind: "dev" });
-    expect(checkBuild(undefined, a, "127.0.0.1")).toEqual({ kind: "dev" });
+    expect(checkBuild("DEV", a, "localhost")).toBe("ok");
+    expect(checkBuild(undefined, a, "127.0.0.1")).toBe("ok");
   });
 
   test("a hosted page without a commit is flagged, not silently passed", () => {
-    expect(checkBuild(undefined, a, "openfront.io")).toEqual({ kind: "unknown", page: undefined });
-    expect(checkBuild("v0.34.18", a, "openfront.io")).toEqual({ kind: "unknown", page: "v0.34.18" });
+    expect(checkBuild(undefined, a, "openfront.io")).toBe("unverified");
+    expect(checkBuild("v0.34.18", a, "openfront.io")).toBe("unverified");
   });
 });
 

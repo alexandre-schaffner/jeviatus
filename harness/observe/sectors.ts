@@ -8,23 +8,19 @@ import type { TileRef } from "src/core/game/GameMap";
 export interface SectorStatic {
   land: number; // sampled land tiles
   coast: number; // sampled shore land tiles
-  cx: number;
-  cy: number;
 }
 
-export interface SectorDynamic {
+interface SectorDynamic {
   unowned: number; // sampled unowned land
   owners: Map<number, number>; // smallID -> sampled tiles
 }
 
-export interface Centroid {
+interface Centroid {
   x: number;
   y: number;
-  n: number; // sampled tiles
 }
 
 export interface Scan {
-  tick: number;
   sectors: SectorDynamic[];
   centroids: Map<number, Centroid>; // by smallID
 }
@@ -42,31 +38,18 @@ export function compass(fromX: number, fromY: number, toX: number, toY: number):
 }
 
 export class SectorGrid {
-  readonly cols: number;
-  readonly rows: number;
-  readonly step: number;
-  readonly statics: SectorStatic[];
+  readonly cols = 16;
+  readonly rows = 16;
+  readonly statics: SectorStatic[] = Array.from({ length: this.cols * this.rows }, () => ({ land: 0, coast: 0 }));
+  // Sample every `step`-th tile on both axes; ~150k samples per scan.
+  private readonly step: number;
   private readonly sw: number;
   private readonly sh: number;
 
-  constructor(
-    private readonly game: Game,
-    cols = 16,
-    rows = 16,
-    // Sample every `step`-th tile on both axes; ~150k samples per scan.
-    step?: number,
-  ) {
-    this.cols = cols;
-    this.rows = rows;
-    this.sw = game.width() / cols;
-    this.sh = game.height() / rows;
-    this.step = step ?? Math.max(1, Math.floor(Math.sqrt((game.width() * game.height()) / 150_000)));
-    this.statics = [];
-    for (let i = 0; i < cols * rows; i++) {
-      const c = i % cols;
-      const r = Math.floor(i / cols);
-      this.statics.push({ land: 0, coast: 0, cx: (c + 0.5) * this.sw, cy: (r + 0.5) * this.sh });
-    }
+  constructor(private readonly game: Game) {
+    this.sw = game.width() / this.cols;
+    this.sh = game.height() / this.rows;
+    this.step = Math.max(1, Math.floor(Math.sqrt((game.width() * game.height()) / 150_000)));
     this.forEachSample((t, s) => {
       if (!game.isLand(t) || game.isImpassable(t)) return;
       this.statics[s].land++;
@@ -93,10 +76,6 @@ export class SectorGrid {
     return r * this.cols + c;
   }
 
-  label(sector: number): string {
-    return `r${Math.floor(sector / this.cols)}c${sector % this.cols}`;
-  }
-
   // Ownership pass: one sampled sweep gives per-sector owner shares and every
   // player's territory centroid.
   scan(): Scan {
@@ -119,8 +98,8 @@ export class SectorGrid {
       sums.set(owner, acc);
     });
     const centroids = new Map<number, Centroid>();
-    for (const [id, a] of sums) centroids.set(id, { x: a.x / a.n, y: a.y / a.n, n: a.n });
-    return { tick: g.ticks(), sectors, centroids };
+    for (const [id, a] of sums) centroids.set(id, { x: a.x / a.n, y: a.y / a.n });
+    return { sectors, centroids };
   }
 }
 

@@ -4,7 +4,7 @@
 import type { ChoiceResponse, NoulResponse, ScoreResponse } from "@typesafe-ai/sdk";
 import type { Decision } from "../decide/pipeline";
 
-export interface Dist {
+interface Dist {
   id: string;
   label: string;
   probs: { key: string; label: string; p: number }[];
@@ -66,7 +66,7 @@ const ROUTE_ARGS: Record<string, string[]> = {
 
 type AnyAnswer = ChoiceResponse | ScoreResponse | NoulResponse;
 
-export function toDist(
+function toDist(
   id: string,
   a: AnyAnswer,
   label: (key: string) => string,
@@ -106,7 +106,7 @@ export function toDist(
   return null;
 }
 
-export interface EventContext {
+interface EventContext {
   agent: string;
   tick: number;
   me: Record<string, unknown>;

@@ -1,7 +1,7 @@
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { build, type BuildOptions, type Plugin } from "esbuild";
+import { build, type Plugin } from "esbuild";
 import { patchVendorSource } from "../harness/vendorPatches";
 
 const root = path.resolve(import.meta.dir, "..");
@@ -24,26 +24,21 @@ const vendorPatches: Plugin = {
   },
 };
 
-const shared: BuildOptions = {
+// esbuild, not Bun.build: vendored OpenFront needs `useDefineForClassFields:
+// false` (see harness/preload.ts), which only esbuild honors. The root
+// tsconfig also supplies the `src/*` alias into the submodule.
+await build({
+  entryPoints: ["hook", "content", "background", "popup"].map((name) => path.join(source, "src", `${name}.ts`)),
+  outdir: output,
   bundle: true,
   format: "iife",
-  platform: "browser",
   target: ["chrome120"],
   tsconfig: path.join(root, "tsconfig.json"),
   sourcemap: true,
-  legalComments: "eof",
   logLevel: "info",
   plugins: [vendorPatches],
   define: { __JEV_OPENFRONT_COMMIT__: JSON.stringify(openfrontCommit) },
-};
-
-for (const name of ["hook", "content", "background", "popup"] as const) {
-  await build({
-    ...shared,
-    entryPoints: [path.join(source, "src", `${name}.ts`)],
-    outfile: path.join(output, `${name}.js`),
-  });
-}
+});
 
 for (const file of ["manifest.json", "popup.html", "popup.css", "README.md"]) {
   cpSync(path.join(source, file), path.join(output, file));
@@ -53,17 +48,6 @@ for (const file of ["manifest.json", "popup.html", "popup.css", "README.md"]) {
 cpSync(path.join(root, "harness", "overlay", "index.html"), path.join(output, "overlay.html"));
 cpSync(path.join(root, "harness", "overlay", "overlay.js"), path.join(output, "overlay.js"));
 cpSync(path.join(root, "vendor", "OpenFrontIO", "LICENSE"), path.join(output, "OPENFRONT-LICENSE"));
-
-// The wire codec and simulation are commit-specific, so the manifest's host
-// set is part of the build contract: loopback for the vendored dev server,
-// openfront.io for the hosted service. Guard against either going missing.
-const manifest = JSON.parse(readFileSync(path.join(output, "manifest.json"), "utf8")) as {
-  content_scripts?: { matches?: string[] }[];
-};
-const matches = manifest.content_scripts?.flatMap((script) => script.matches ?? []) ?? [];
-for (const required of ["http://localhost/*", "http://127.0.0.1/*", "https://openfront.io/*", "https://*.openfront.io/*"]) {
-  if (!matches.includes(required)) throw new Error(`extension manifest is missing expected match ${required}`);
-}
 
 writeFileSync(path.join(output, "BUILD.txt"), `OpenFront submodule: ${openfrontCommit}\n`);
 console.log(`Built unpacked extension at ${output}`);

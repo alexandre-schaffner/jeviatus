@@ -26,7 +26,7 @@ function snapshot(): { obs: Observation; cands: Candidates } {
   const scan = grid.scan();
   const reach = new SeaReach().get(game, me, scan);
   const econ = economy(game, me, new IncomeTracker());
-  const obs = observe({ game, me, grid, scan, refs, memory, seaReachable: new Set(reach.keys()), goldPerMin: 0, econ });
+  const obs = observe({ game, me, scan, refs, memory, seaReachable: new Set(reach.keys()), goldPerMin: 0, econ });
   return { obs, cands: buildCandidates(game, me, obs, reach, econ, memory.threat) };
 }
 
