@@ -16,7 +16,8 @@
 // work included) as the baseline. Branches stay local unless STREAM_LAB_PRS
 // is on, which needs a clean, pushed branch to open PRs against. Claude Code
 // runs with the improve loop's narrow tool list, with no secrets in its
-// environment, and the screen masks any secret that shows up anyway.
+// environment but its own login (claudeEnv), and the screen masks any secret
+// that shows up anyway.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -78,6 +79,21 @@ export function secretValues(env: Record<string, string | undefined> = process.e
 
 export function scrubbedEnv(env: Record<string, string | undefined> = process.env): Record<string, string> {
   return Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => !SECRET_ENV.test(e[0]) && typeof e[1] === "string"));
+}
+
+// Claude Code's environment: the scrubbed one plus its own login, when it
+// comes from env rather than a local `claude` login (a Mac's keychain). On a
+// server that's CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`, billed to a
+// Claude subscription), else LAB_ANTHROPIC_API_KEY (billed to the API key's
+// organization; kept apart from the commentator's ANTHROPIC_API_KEY so the lab
+// never spends it by accident). It's still masked on screen like every secret.
+export function claudeEnv(env: Record<string, string | undefined> = process.env): Record<string, string> {
+  const out = scrubbedEnv(env);
+  const oauth = env.CLAUDE_CODE_OAUTH_TOKEN?.trim();
+  const apiKey = env.LAB_ANTHROPIC_API_KEY?.trim();
+  if (oauth) out.CLAUDE_CODE_OAUTH_TOKEN = oauth;
+  else if (apiKey) out.ANTHROPIC_API_KEY = apiKey;
+  return out;
 }
 
 // One line per Claude Code stream-json event, for the terminal.
@@ -185,10 +201,27 @@ export class Lab {
 
   private async ensureWorktree(): Promise<void> {
     await this.sh(["git", "worktree", "prune"], { allowFail: true });
-    if (fs.existsSync(path.join(this.wt, ".git"))) return;
+    // In the container the repository is part of the image, the worktree is
+    // on the volume: after a redeploy the worktree points at a repository
+    // that's gone, and is made again.
+    if (fs.existsSync(path.join(this.wt, ".git")) && (await this.sh(["git", "rev-parse", "--git-dir"], { cwd: this.wt, allowFail: true })).ok) return;
     fs.rmSync(this.wt, { recursive: true, force: true });
     await this.sh(["git", "worktree", "add", "--detach", this.wt, "HEAD"]);
     this.link();
+  }
+
+  // Builds whose commits this repository doesn't have (the lab's commits
+  // lived in a previous container's image): measuring starts over from a new
+  // baseline. Past attempts are kept, for the prompt.
+  private async forgetLostBuilds(): Promise<void> {
+    const s = this.state;
+    const lost = async (b: Build | null) => b !== null && !(await this.sh(["git", "cat-file", "-e", `${b.sha}^{commit}`], { allowFail: true })).ok;
+    if (!(await lost(s.baseline)) && !(await lost(s.candidate))) return;
+    this.d.log("[lab] the saved builds aren't in this repository (a redeploy?); starting over from a new baseline");
+    s.baseline = null;
+    s.candidate = null;
+    s.baseBranch = null;
+    this.save();
   }
 
   // The worktree shares this checkout's dependencies and OpenFront. A checkout
@@ -245,6 +278,7 @@ export class Lab {
     this.d.announce("lab", "The stream cut to Jev's lab: Claude Code will analyze Jev's recent games live and change one piece of its decision code; the next games test it.", "Alright, recess is over. Back to the lab. Let's cut open the kid's brain and see what's wrong with it.", "smug");
     try {
       await this.ensureWorktree();
+      await this.forgetLostBuilds();
       await this.analyze();
       await this.advance();
     } catch (err) {
@@ -370,7 +404,7 @@ export class Lab {
     const cmd = ["claude", "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--allowedTools", TOOLS];
     if (this.o.model) cmd.push("--model", this.o.model);
     if (resume) cmd.push("--resume", resume);
-    const p = Bun.spawn(cmd, { cwd: this.wt, env: scrubbedEnv(), stdin: new Blob([prompt]), stdout: "pipe", stderr: "pipe" });
+    const p = Bun.spawn(cmd, { cwd: this.wt, env: claudeEnv(), stdin: new Blob([prompt]), stdout: "pipe", stderr: "pipe" });
     const timer = setTimeout(() => p.kill(), this.o.maxMinutes * 60_000);
     let sessionId: string | null = null;
     let buf = "";

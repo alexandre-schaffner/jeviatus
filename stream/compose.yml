@@ -1,4 +1,5 @@
-# 24/7 Kick stream. Start with `bun run stream:up` (it passes OPENFRONT_COMMIT).
+# 24/7 Kick stream. Start with `bun run stream:up`, or on a server with
+# `deploy/deploy.sh <host> up` (both pass OPENFRONT_COMMIT).
 name: jeviatus
 services:
   stream:
@@ -12,6 +13,8 @@ services:
     image: jeviatus-stream
     env_file: ../.env
     restart: unless-stopped
+    # main.ts takes up to 15 s to shut everything down cleanly.
+    stop_grace_period: 30s
     # Chromium keeps its renderer memory in /dev/shm.
     shm_size: 1gb
     volumes:

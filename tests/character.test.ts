@@ -7,7 +7,7 @@ import { cleanChat } from "../stream/kickchat";
 import { durationMs, envelope, type MusicSource, OUT_RATE, VoicePump, wavData } from "../stream/voice";
 import { Playlist, shuffle } from "../stream/music";
 import { render, TRACKS, wav } from "../stream/lofi";
-import { describeEvent, scrubbedEnv, secretValues } from "../stream/lab";
+import { claudeEnv, describeEvent, scrubbedEnv, secretValues } from "../stream/lab";
 import { Studio } from "../stream/studio";
 
 const scene = (phase: Scene["phase"], events: SceneEvent[] = [], rank = 5, landPct = 1): Scene => ({
@@ -292,5 +292,14 @@ describe("lab", () => {
     expect(scrubbedEnv(env)).toEqual({ HOME: "/h", PATH: "/bin" });
     const studio = new Studio(secretValues(env));
     expect(studio.redact("key=sk_us-west-2_abcdefgh!")).toBe("key=[redacted]!");
+  });
+
+  test("Claude Code gets its own login and nothing else secret", () => {
+    const base = { HOME: "/h", ANTHROPIC_API_KEY: "sk-ant-commentator", GITHUB_TOKEN: "ghp_12345678" };
+    expect(claudeEnv(base)).toEqual({ HOME: "/h" });
+    expect(claudeEnv({ ...base, LAB_ANTHROPIC_API_KEY: "sk-ant-lab-1234" })).toEqual({ HOME: "/h", ANTHROPIC_API_KEY: "sk-ant-lab-1234" });
+    // A subscription token wins over an API key.
+    expect(claudeEnv({ ...base, LAB_ANTHROPIC_API_KEY: "sk-ant-lab-1234", CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-abcd" })).toEqual({ HOME: "/h", CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-abcd" });
+    expect(new Studio(secretValues({ CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-abcd" })).redact("sk-ant-oat01-abcd")).toBe("[redacted]");
   });
 });

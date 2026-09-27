@@ -20,7 +20,8 @@
     "tiktok": "bun tiktok/cli.ts",
     "stream:down": "docker compose -f stream/compose.yml down",
     "stream:mac": "STREAM_PLATFORM=mac bun stream/main.ts",
-    "live": "bun stream/launch.ts"
+    "live": "bun stream/launch.ts",
+    "deploy": "bash deploy/deploy.sh"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "0.6.0",

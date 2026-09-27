@@ -105,6 +105,13 @@ if (container && cfg.audio) {
 // --- browser ------------------------------------------------------------------------
 
 let cdp: Cdp | null = null;
+// STREAM_PROXY sends the browser's traffic through a proxy: a residential or
+// ISP one, when Cloudflare keeps challenging a server's datacenter IP
+// (deploy/README.md). Loopback (the lab's screen, the trace sink) never uses it.
+const proxyArgs = (): string[] => {
+  const proxy = process.env.STREAM_PROXY?.trim();
+  return proxy ? [`--proxy-server=${proxy}`] : [];
+};
 // Chrome for Testing, as Playwright installs it: unlike branded Chrome it
 // still honors --load-extension.
 function macChrome(): string {
@@ -140,6 +147,7 @@ function macChromeArgs(): string[] {
     "--disable-backgrounding-occluded-windows",
     "--disable-renderer-backgrounding",
     "--disable-background-timer-throttling",
+    ...proxyArgs(),
     ...(process.env.CHROMIUM_FLAGS?.split(/\s+/).filter(Boolean) ?? []),
     // Not headless: it would dodge macOS pausing hidden windows, but
     // openfront.io's Cloudflare check stops headless Chrome at the door.
@@ -178,6 +186,7 @@ function chromiumArgs(): string[] {
     "--use-angle=gl",
     "--ignore-gpu-blocklist",
     "--disable-gpu-compositing",
+    ...proxyArgs(),
     ...(process.env.CHROMIUM_FLAGS?.split(/\s+/).filter(Boolean) ?? []),
     cfg.openfrontUrl,
   ];
@@ -417,6 +426,10 @@ const lab =
       )
     : null;
 if (cfg.lab) log(`[lab] live coding every ${cfg.lab.everyGames} games; a change is judged after ${cfg.lab.gamesPerBuild} games on it${cfg.lab.prs ? "; opens PRs" : "; branches stay local"}`);
+// The container has no `claude` login of its own: it comes from .env.
+if (cfg.lab && container && !process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim() && !process.env.LAB_ANTHROPIC_API_KEY?.trim()) {
+  log("[lab] warning: no CLAUDE_CODE_OAUTH_TOKEN or LAB_ANTHROPIC_API_KEY, so Claude Code can't log in and every change fails (deploy/README.md); STREAM_LAB=false turns the lab off");
+}
 
 const shutdown = async () => {
   log("shutting down");

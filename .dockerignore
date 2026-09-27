@@ -1,8 +1,14 @@
-.git
+# .git goes in (stream/Dockerfile: the lab works in worktrees of it), but not
+# the submodule's history: the image fetches OpenFront itself.
+.git/modules
 .context
 .env
+.env.*
+!.env.example
 node_modules
 vendor
 dist
 runs
+music
+.loop
 **/.DS_Store
