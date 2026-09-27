@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
-      # vendor/OpenFrontIO pins its engines to Node 24.
+      # vendor/OpenFrontIO wants Node 24 (and npm 12; `setup` skips that check).
       - uses: actions/setup-node@v4
         with:
           node-version: 24
