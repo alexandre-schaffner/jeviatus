@@ -26,6 +26,8 @@ This Docker container plays public [openfront.io](https://openfront.io) free-for
 2. Start it: `bun run stream:up`. This builds the image at the pinned OpenFront commit and runs it detached with `restart: unless-stopped`.
 3. Watch it: `bun run stream:logs`. Stop it: `bun run stream:down`.
 
+To run it on a rented server instead, see [deploy/README.md](../deploy/README.md): `deploy/deploy.sh root@<ip> up` sets up the server and starts this container there.
+
 For a dry run that doesn't go live, set `STREAM_OUTPUT=/data/dry-run.mkv` and copy the file out with `docker compose -f stream/compose.yml cp stream:/data/dry-run.mkv .`.
 
 **No GPU needed.** The container renders WebGL on the CPU with Mesa's llvmpipe, at about 25 fps with 4 vCPUs. OpenFront refuses software WebGL (`src/client/render/gl/initGL.ts` in the vendored client) and would show a "Hardware acceleration is off" notice over a black map. So the driver injects a small script into the stream's own browser before each match (`GPU_SHIM` in `stream/openfront.ts`). It drops the "fail on a slow GPU" flag and masks the software renderer's name. SwiftShader, Chromium's built-in CPU renderer, also works with the shim but runs OpenFront at about 2.5 fps.
@@ -75,7 +77,8 @@ The commentator narrates each step. Everything happens in a worktree of its own,
 
 - **Safety:** Claude Code gets the improve loop's narrow tools: read and edit files, typecheck, run the tests, `git diff`/`git status`. It may only change `harness/decide|observe|strategy|act` and `tests/`. It runs without any `*KEY*`/`*TOKEN*`/stream variables in its environment, and the lab screen masks any secret value that shows up anyway.
 - **Pull requests:** with `STREAM_LAB_PRS=true` and a clean, pushed branch, each change also becomes a PR, and its verdict is posted there.
-- **Cost:** each change is one Claude Code run, typically a few minutes. It needs the `claude` CLI logged in.
+- **Cost:** each change is one Claude Code run, typically a few minutes. On a Mac it uses your `claude` login. The container has Claude Code but no login of its own: set `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`, uses your Claude plan) or `LAB_ANTHROPIC_API_KEY` (billed per token) in `.env`. Only the `claude` process gets it ([deploy/README.md](../deploy/README.md#claude-code-for-the-lab)).
+- **Redeploys:** in the container, the lab's commits live in the image's copy of the repository. After a redeploy the lab starts over from a new baseline.
 
 `STREAM_LAB=false` turns it off.
 
@@ -133,6 +136,8 @@ The extension must be built from the exact commit openfront.io runs (see `extens
 | `STREAM_LAB_EVERY_GAMES` / `STREAM_LAB_GAMES_PER_BUILD` | 2 / 4 | A session every N games; a change is judged after this many games on it. |
 | `STREAM_LAB_MAX_MINUTES` / `STREAM_LAB_MODEL` | 12 / Claude Code's default | Time limit and model for each Claude Code run. |
 | `STREAM_LAB_PRS` | false | Push each change and open a PR (needs a clean, pushed branch). |
+| `CLAUDE_CODE_OAUTH_TOKEN` / `LAB_ANTHROPIC_API_KEY` | unset | Claude Code's login for the lab in the container. The token wins if both are set. |
+| `STREAM_PROXY` | unset | The browser's proxy (`http://host:port`, `socks5://host:port`), for when Cloudflare challenges the server's IP ([deploy/README.md](../deploy/README.md#cloudflare-turnstile)). |
 | `MUSIC` / `MUSIC_DIR` / `MUSIC_VOLUME` | true / `<data>/music` / 0.22 | Background music ([Music](#music)). |
 | `COMMENTATOR` | true | The on-screen commentator ([The commentator](#the-commentator)). |
 | `COMMENTATOR_NAME` | `General Static` | |
@@ -161,6 +166,6 @@ The extension must be built from the exact commit openfront.io runs (see `extens
 
 ## Limits worth knowing
 
-- **Turnstile.** openfront.io protects joins with Cloudflare Turnstile. Usually it passes invisibly in a normal browser. If it ever asks for a human check, the driver doesn't try to solve it: it shows a notice on the band and tries again 5 minutes later.
+- **Turnstile.** openfront.io protects joins with Cloudflare Turnstile. Usually it passes invisibly in a normal browser. If it ever asks for a human check, the driver doesn't try to solve it: it shows a notice on the band and tries again 5 minutes later. Datacenter IPs get challenged more often than home connections: see [deploy/README.md](../deploy/README.md#cloudflare-turnstile) before moving the stream to a server.
 - **Fair play.** This bot plays public lobbies against people, as `jeviatus`, a name that doesn't say it's a bot. It plays FFA only. Check OpenFront's terms, and consider asking its maintainers before running it around the clock.
 - **Voting needs a public repo.** Viewers can only see and 👍 PRs if the repository is public.
