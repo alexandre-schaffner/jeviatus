@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { installExpression, plate, sayExpression } from "../stream/avatar";
 import type { Scene, SceneEvent } from "../stream/camera";
 import { CannedWriter, Commentator, type Line, prompt, type Turn, unsafe, type Writer } from "../stream/commentator";
-import { bandHeight, ffmpegArgs } from "../stream/encoder";
+import { ffmpegArgs } from "../stream/encoder";
 import { cleanChat } from "../stream/kickchat";
 import { durationMs, envelope, type MusicSource, OUT_RATE, VoicePump, wavData } from "../stream/voice";
 import { Playlist, shuffle } from "../stream/music";
@@ -223,11 +223,11 @@ describe("kick chat", () => {
 });
 
 describe("encoder with the voice", () => {
-  const files = { headline: "/b/h", playing: "/b/p", status: "/b/s" };
+  const band = { dir: "/b", bribes: false, lab: true };
   const base = { outputs: [{ name: "file" as const, url: "/x.mkv" }], width: 1280, height: 720, fps: 30, videoKbps: 4500, display: ":99" };
 
   test("Mac path: the voice is the only audio", () => {
-    const args = ffmpegArgs({ ...base, audio: false, source: "pipe", voice: true }, { height: bandHeight(720), files });
+    const args = ffmpegArgs({ ...base, audio: false, source: "pipe", voice: true }, band);
     expect(args).toContain("pipe:3");
     expect(args).not.toContain("anullsrc=channel_layout=stereo:sample_rate=48000");
     expect(args[args.indexOf("-filter_complex") + 1]).toEndWith(";[1:a]aformat=sample_rates=48000:channel_layouts=stereo[a]");
@@ -235,7 +235,7 @@ describe("encoder with the voice", () => {
   });
 
   test("container: the game's sound under the mix", () => {
-    const args = ffmpegArgs({ ...base, audio: true, source: "x11", voice: true }, { height: bandHeight(720), files });
+    const args = ffmpegArgs({ ...base, audio: true, source: "x11", voice: true }, band);
     const graph = args[args.indexOf("-filter_complex") + 1]!;
     expect(graph).toContain("[2:a]");
     expect(graph).toContain("volume=0.7");
@@ -243,7 +243,7 @@ describe("encoder with the voice", () => {
   });
 
   test("no voice: unchanged", () => {
-    const args = ffmpegArgs({ ...base, audio: false, source: "pipe" }, { height: bandHeight(720), files });
+    const args = ffmpegArgs({ ...base, audio: false, source: "pipe" }, band);
     expect(args).not.toContain("pipe:3");
     expect(args[args.indexOf("[v]") + 2]).toBe("1:a");
   });

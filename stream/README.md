@@ -91,12 +91,16 @@ Lofi plays under the commentator and dips when he speaks. The tracks are origina
 1. The driver opens openfront.io and applies the ballot's top strategy (the biggest bribe, else the most 👍) to the extension's settings, with Jev switched **off**.
 2. The mouse pointer glides to the public free-for-all lobby card and clicks it.
 3. In the lobby, it glides to the Jev switch in the extension's panel and flips it on. This is the showcase shot.
-4. Jev plays the match through the extension. The band under the game shows the match clock, what Jev is doing, and the extension's status.
+4. Jev plays the match through the extension. The band under the game shows what's on camera (and the extension's status when it isn't just playing), the strategy in play and the ballot's next entry, how to vote, and on the right the match clock, Jev's rank and share of the land, the stream's record and what the lab is testing.
 5. After Jev is eliminated (plus 20 s of spectating), or once someone wins, the driver returns to the homepage and starts the next match.
 
 Every match is logged to `/data/runs/<ts>-extension-<gameID>/trace.jsonl` on the volume: the extension posts its trace to a loopback sink in the driver, and the driver adds its own read of the result (`stream_result`). Copy the directory out (`docker compose -f stream/compose.yml cp stream:/data/runs ./runs`) and run `bun run analyze`.
 
 Every wait has a time limit. If something unexpected happens (a refused lobby, a disconnect, the page changed), it goes back to the homepage and tries again. Crashed processes restart with backoff.
+
+## Previewing the layout
+
+`bun scripts/preview-layout.ts` renders stills of the broadcast (a match, the lobby, the lab, the bribe strip) into `.context/layout/`, offline: it runs the stream's own band text, ffmpeg filter graph, lab page and commentator on a frame from the newest recording (or `--recording <file.mkv> --at <seconds>`, or `--frame <png>`), in a throwaway headless Chrome. It never touches a running stream. The band's layout (sizes, colors, positions) is in `stream/bandLayout.ts`; its text in `stream/band.ts`.
 
 ## Two platforms
 
@@ -104,7 +108,7 @@ One ffmpeg process encodes once and sends the result to every platform (ffmpeg's
 
 ## Bribes
 
-Set `BRIBE_MINT` (the coin's mint address: the last part of its `pump.fun/coin/<mint>` URL) and `BRIBE_WALLET` (a wallet that only receives bribes) to turn them on. The band gets a fourth line that tells viewers how to bribe:
+Set `BRIBE_MINT` (the coin's mint address: the last part of its `pump.fun/coin/<mint>` URL) and `BRIBE_WALLET` (a wallet that only receives bribes) to turn them on. The band gets a strip along its bottom that tells viewers how to bribe:
 
 - Send the coin to the wallet with a memo naming a strategy PR: `#12`. Most wallets can't attach a memo, so an amount ending in the PR number also works: `5000.000012` backs PR #12. The last six decimals are the PR number. A memo that names no PR falls back to the amount. An amount with no PR in it (`5000`) counts as a tip.
 - Each PR has a pot. Before each match, the ballot entry with the biggest pot (at least `BRIBE_MIN` tokens) plays, ahead of any 👍 count. Its pot is spent once the match starts. Other pots carry over to later matches.
@@ -124,7 +128,7 @@ The extension must be built from the exact commit openfront.io runs (see `extens
 | Variable | Default | |
 | --- | --- | --- |
 | `STREAM_OUTPUT` | Kick and/or pump.fun | Any ffmpeg output, instead of the platforms. A path records a Matroska file. |
-| `STREAM_WIDTH` / `STREAM_HEIGHT` / `STREAM_FPS` | 1280 / 720 / 30 | Output size. The band takes the bottom ~12% (~15% with the bribe line). |
+| `STREAM_WIDTH` / `STREAM_HEIGHT` / `STREAM_FPS` | 1280 / 720 / 30 | Output size. The band takes the bottom 15% (18% with the bribe strip). |
 | `STREAM_VIDEO_KBPS` | 4500 | Kick allows up to 8000. |
 | `BRIBE_MINT` / `BRIBE_WALLET` | unset | The coin and the wallet bribes go to. Both, or neither. |
 | `BRIBE_TICKER` | `JEV` | Shown on the band as `$JEV`. |

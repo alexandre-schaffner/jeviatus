@@ -7,48 +7,39 @@
 // the same encode also goes to rolling recording segments
 // (stream/recordings.ts), for TikTok clips.
 
+import path from "node:path";
+import { BAND_COLORS, BAND_FONTS, type BandBox, bandDesign, type BandSlot } from "./bandLayout";
 import type { StreamConfig, StreamOutput } from "./config";
 import { SEGMENT_PATTERN } from "./recordings";
 import { OUT_RATE } from "./voice";
+
+export { bandHeight, bandLines, screenSize } from "./bandLayout";
 
 export interface RecordTarget {
   dir: string;
   segmentSeconds: number;
 }
 
+// The band: the folder its text files are written to (stream/band.ts), and
+// whether it has the bribe strip and the lab row (stream/bandLayout.ts).
 export interface BandLayout {
-  height: number;
-  // `bribe` only when bribes are on: it's the band's fourth line.
-  files: { headline: string; playing: string; bribe?: string; status: string };
+  dir: string;
+  bribes: boolean;
+  lab: boolean;
 }
 
-// Three lines of text, four with the bribe line.
-export const bandLines = (bribes: boolean) => (bribes ? 4 : 3);
+// Filtergraph escaping for a quoted option value.
+const escape = (s: string) => s.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
 
-// The band's height for an output height.
-export function bandHeight(outputHeight: number, lines = 3): number {
-  return Math.round((outputHeight / 720) * (12 + 24 * lines) / 2) * 2;
+// A file slot is re-read every frame (reload=1); expansion=none keeps '%' in
+// PR titles literal.
+function drawtext(slot: BandSlot, dir: string): string {
+  const source = slot.file ? `textfile='${escape(path.join(dir, slot.file))}':reload=1` : `text='${escape(slot.text ?? "")}'`;
+  const x = slot.align === "right" ? `${slot.x}-text_w` : slot.align === "center" ? `${slot.x}+(${slot.maxWidth}-text_w)/2` : String(slot.x);
+  return `drawtext=${source}:expansion=none:fontfile='${escape(BAND_FONTS[slot.font])}':fontsize=${slot.size}:fontcolor=${slot.color}:x=${x}:y=${Math.round(slot.y)}`;
 }
 
-// The browser gets the output minus the band.
-export function screenSize(c: Pick<StreamConfig, "width" | "height">, lines = 3): { width: number; height: number } {
-  return { width: c.width, height: c.height - bandHeight(c.height, lines) };
-}
-
-// drawtext reads the file itself (reload=1, every frame), so only the path
-// needs filtergraph escaping; expansion=none keeps '%' in PR titles literal.
-const escapePath = (file: string) => file.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
-
-function drawtext(file: string, o: { size: number; y: number; color: string; font: string }): string {
-  return `drawtext=textfile='${escapePath(file)}':reload=1:expansion=none:fontfile='${escapePath(o.font)}':fontsize=${o.size}:fontcolor=${o.color}:x=24:y=${o.y}`;
-}
-
-// Debian's fonts-dejavu-core (installed in stream/Dockerfile); macOS's Arial.
-const mac = process.platform === "darwin";
-export const BAND_FONTS = {
-  regular: process.env.BAND_FONT ?? (mac ? "/System/Library/Fonts/Supplemental/Arial.ttf" : "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
-  bold: process.env.BAND_FONT_BOLD ?? (mac ? "/System/Library/Fonts/Supplemental/Arial Bold.ttf" : "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
-};
+const drawbox = (b: BandBox) => `drawbox=x=${b.x}:y=${b.y}:w=${b.w}:h=${b.h}:color=${b.color}:t=fill`;
 
 export function ffmpegArgs(
   c: Pick<StreamConfig, "outputs" | "width" | "height" | "fps" | "videoKbps" | "audio" | "display"> & {
@@ -64,11 +55,8 @@ export function ffmpegArgs(
 ): string[] {
   const gop = String(c.fps * 2);
   const kbps = `${c.videoKbps}k`;
-  const screen = { width: c.width, height: c.height - band.height };
-  const scale = c.height / 720;
-  const line = Math.round(24 * scale);
-  const top = screen.height + Math.round(10 * scale);
-  const { headline, playing, bribe, status } = band.files;
+  const design = bandDesign({ width: c.width, height: c.height, bribes: band.bribes, lab: band.lab });
+  const screen = { width: c.width, height: design.top };
   const pipe = c.source === "pipe";
   // Inputs: 0 video; then the game audio (PulseAudio, or silence), unless the
   // Mac path's only sound is the voice; then the voice.
@@ -76,12 +64,9 @@ export function ffmpegArgs(
   const voiceIn = game ? 2 : 1;
   const filter = [
     // Screencast frames can come a pixel off the requested size.
-    `[0:v]${pipe ? `scale=${screen.width}:${screen.height},` : ""}pad=${c.width}:${c.height}:0:0:color=0x0d1117`,
-    `drawbox=x=0:y=${screen.height}:w=${c.width}:h=${Math.max(2, Math.round(2 * scale))}:color=0x53e3a6:t=fill`,
-    drawtext(headline, { size: Math.round(19 * scale), y: top, color: "0x53e3a6", font: BAND_FONTS.bold }),
-    drawtext(playing, { size: Math.round(17 * scale), y: top + line, color: "white", font: BAND_FONTS.regular }),
-    ...(bribe ? [drawtext(bribe, { size: Math.round(15 * scale), y: top + 2 * line, color: "0xffd166", font: BAND_FONTS.regular })] : []),
-    drawtext(status, { size: Math.round(15 * scale), y: top + (bribe ? 3 : 2) * line, color: "0x9aa4b2", font: BAND_FONTS.regular }),
+    `[0:v]${pipe ? `scale=${screen.width}:${screen.height},` : ""}pad=${c.width}:${c.height}:0:0:color=${BAND_COLORS.bg}`,
+    ...design.boxes.map(drawbox),
+    ...design.slots.map((slot) => drawtext(slot, band.dir)),
   ].join(",");
   return [
     "-hide_banner",

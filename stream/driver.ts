@@ -67,6 +67,7 @@ export class Driver {
   private ballotState: Ballot | null = null;
   private ballotAt = 0;
   private games = 0;
+  private wins = 0;
   private failedRebuildFor: string | null = null;
 
   constructor(private readonly d: DriverDeps) {}
@@ -83,7 +84,7 @@ export class Driver {
         const wait = err instanceof Retry ? err.waitMs : 10_000;
         const msg = err instanceof Error ? err.message : String(err);
         this.d.log(`[driver] ${msg}; retrying in ${Math.round(wait / 1000)}s`);
-        this.d.band({ status: err instanceof Retry ? msg : "Hiccup; getting back to the lobby list" });
+        this.d.band({ status: err instanceof Retry ? msg : "Hiccup; getting back to the lobby list", clock: null, standing: null });
         await Bun.sleep(wait);
       }
     }
@@ -164,7 +165,7 @@ export class Driver {
     const page = await this.page();
     this.d.commentator?.update({ phase: "between" });
     await installGpuShim(this.cdp, page);
-    this.d.band({ status: "Heading to openfront.io" });
+    this.d.band({ status: "Heading to openfront.io", clock: null, standing: null });
     await this.goHome(page);
     if (await this.cdp.evaluate<boolean>(page, prepareStorage(cfg.username, cfg.audio))) await this.goHome(page);
 
@@ -252,12 +253,13 @@ export class Driver {
 
     const tracedBefore = this.d.traces?.latest() ?? null;
     const startedAt = Date.now();
-    const result = await this.watch(page, overlay, entry);
+    const result = await this.watch(page, overlay);
     this.games++;
+    if (/JEV WON/.test(result)) this.wins++;
     this.d.log(`[driver] game ${this.games} over: ${result}`);
     this.d.commentator?.matchOver(result, this.games);
     this.annotate(tracedBefore, { type: "stream_result", result, strategy: entry?.strategy ?? null, pr: entry?.number ?? null, votes: entry?.votes ?? null, bribe, wallMs: Date.now() - startedAt });
-    this.d.band({ games: this.games, lastResult: result, status: `Match over: ${result}` });
+    this.d.band({ games: this.games, wins: this.wins, lastResult: result, status: `Match over: ${result}`, clock: null, standing: null });
     await Bun.sleep(4000);
     if (this.d.lab && cfg.lab && this.games % cfg.lab.everyGames === 0) await this.labSession(page);
   }
@@ -316,10 +318,9 @@ export class Driver {
     await setExtensionSettings(this.cdp, overlay, { enabled: true });
   }
 
-  private async watch(page: string, overlay: string, entry: BallotEntry | null): Promise<string> {
+  private async watch(page: string, overlay: string): Promise<string> {
     const { cfg } = this.d;
     const startedAt = Date.now();
-    const name = entry ? `"${entry.strategy.name}"` : "its own judgment";
     let deadAt: number | null = null;
     let wonAt: number | null = null;
     let result = "left the match";
@@ -351,7 +352,9 @@ export class Driver {
         // the overlay frame can briefly detach; the band just skips it
       }
       const phase = g?.spawnPhase ? "picking a spawn" : deadAt ? "eliminated, spectating" : "playing";
-      let caption = `Jev is ${phase} a public FFA with ${name}`;
+      // The strategy has its own row on the band: the caption is what's on camera.
+      let caption = `Jev is ${phase} a public free-for-all`;
+      let standing: string | null = g?.spawnPhase ? "picking a spawn" : deadAt ? "out, spectating" : null;
       const commentator = this.d.commentator;
       commentator?.update({ clock: t });
       if (cfg.camera || commentator) {
@@ -368,13 +371,12 @@ export class Driver {
             caption = shot.caption;
           }
           const me = scene.me;
-          if (me && scene.phase === "alive") caption += `  |  Jev #${me.rank} of ${me.players}, ${me.landPct.toFixed(1)}% of the land`;
-          if (scene.phase === "dead" && deadAt) caption += "  |  Jev is out, spectating";
+          if (me && scene.phase === "alive") standing = `#${me.rank} of ${me.players}  ·  ${me.landPct.toFixed(1)}% land`;
         } catch (err) {
           this.d.log(`[camera] ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);
         }
       }
-      this.d.band({ status: `LIVE ${t}  ${caption}${jev && jev !== "Playing" ? `  [Jev: ${jev}]` : ""}` });
+      this.d.band({ status: `${caption}${jev && jev !== "Playing" ? `  ·  Jev: ${jev}` : ""}`, clock: t || null, standing });
     }
   }
 }

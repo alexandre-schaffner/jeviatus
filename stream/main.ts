@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { GitHubBallot } from "./ballot";
 import { Band, type BandState } from "./band";
+import { bandDesign, bandLines, screenSize } from "./bandLayout";
 import { type Bribe, shortAddress, SolanaBribes } from "./bribes";
 import { Cdp } from "./cdp";
 import { Character } from "./character";
@@ -23,7 +24,7 @@ import { Studio } from "./studio";
 import { VoicePump } from "./voice";
 import { loadStreamConfig } from "./config";
 import { Driver } from "./driver";
-import { bandHeight, bandLines, describeOutputs, ffmpegArgs, screenSize, slaveFailure } from "./encoder";
+import { describeOutputs, ffmpegArgs, slaveFailure } from "./encoder";
 import { validUsername } from "./openfront";
 import { CdpPointer, type Pointer, XdotoolPointer } from "./pointer";
 import { startTraceSink } from "../harness/log/sink";
@@ -40,7 +41,8 @@ if (!existsSync(path.join(extensionDir, "manifest.json"))) throw new Error(`no b
 
 const lines = bandLines(cfg.bribe !== null);
 const screen = screenSize(cfg, lines);
-const band = new Band(process.env.BAND_DIR ?? "/tmp/jev-band");
+const bandShape = { bribes: cfg.bribe !== null, lab: cfg.lab !== null };
+const band = new Band(process.env.BAND_DIR ?? "/tmp/jev-band", bandDesign({ width: cfg.width, height: cfg.height, ...bandShape }));
 const bribes = cfg.bribe ? new SolanaBribes({ ...cfg.bribe }) : null;
 const bribeBand = (thanks: string | null = null): BandState["bribe"] =>
   bribes && cfg.bribe
@@ -54,8 +56,12 @@ const bandState: BandState = {
   ballot: null,
   bribe: bribeBand(),
   status: "Starting up",
+  clock: null,
+  standing: null,
   games: 0,
+  wins: 0,
   lastResult: null,
+  lab: null,
 };
 const setBand = (patch: Partial<BandState>) => {
   Object.assign(bandState, patch);
@@ -267,15 +273,7 @@ const ffmpeg = new Supervised({
     ffmpegBin,
     ...ffmpegArgs(
       { ...cfg, source: container ? "x11" : "pipe", voice },
-      {
-        height: bandHeight(cfg.height, lines),
-        files: {
-          headline: band.file("headline.txt"),
-          playing: band.file("playing.txt"),
-          ...(bribes ? { bribe: band.file("bribe.txt") } : {}),
-          status: band.file("status.txt"),
-        },
-      },
+      { dir: band.dir, ...bandShape },
       record ?? undefined,
     ),
   ],
@@ -377,7 +375,9 @@ const driver = new Driver({
   pointer: (page): Pointer => (cfg.pointer === "cdp" ? new CdpPointer(live(), page) : xdotool),
   ballot: new GitHubBallot({ repo: cfg.ballot.repo, token: cfg.ballot.token, requireApproval: cfg.ballot.requireApproval }),
   bribes: bribes ?? undefined,
-  band: setBand,
+  // A match starting (the build it plays on) or ending (a game for the build
+  // under test): the lab's row catches up.
+  band: (patch) => setBand("playing" in patch || "games" in patch ? { ...patch, lab: labBand() } : patch),
   log,
   bundledCommit: () => bundledCommit(cfg.extensionDir),
   traces,
@@ -409,6 +409,7 @@ const lab =
           traceDirs: [cfg.trace.dir],
           extensionDir,
           gamesPerBuild: cfg.lab.gamesPerBuild,
+          everyGames: cfg.lab.everyGames,
           maxMinutes: cfg.lab.maxMinutes,
           model: cfg.lab.model,
           prs: cfg.lab.prs,
@@ -425,6 +426,16 @@ const lab =
         },
       )
     : null;
+// The band's lab row: what the lab is testing (read from the games' traces).
+function labBand(): BandState["lab"] {
+  try {
+    return lab?.summary() ?? null;
+  } catch (err) {
+    log(`[lab] ${err instanceof Error ? err.message : String(err)}`);
+    return bandState.lab;
+  }
+}
+setBand({ lab: labBand() });
 if (cfg.lab) log(`[lab] live coding every ${cfg.lab.everyGames} games; a change is judged after ${cfg.lab.gamesPerBuild} games on it${cfg.lab.prs ? "; opens PRs" : "; branches stay local"}`);
 // The container has no `claude` login of its own: it comes from .env.
 if (cfg.lab && container && !process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim() && !process.env.LAB_ANTHROPIC_API_KEY?.trim()) {

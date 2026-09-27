@@ -127,7 +127,7 @@ describe("recordings", () => {
 
   test("the broadcast tees into segments without risking the live output", () => {
     const cfg = { outputs: [{ name: "kick" as const, url: "rtmps://ingest.example:443/app/key" }], width: 1280, height: 720, fps: 30, videoKbps: 4500, audio: false, display: ":99" };
-    const band = { height: 84, files: { headline: "/b/h", playing: "/b/p", status: "/b/s" } };
+    const band = { dir: "/b", bribes: false, lab: true };
     const args = ffmpegArgs(cfg, band, { dir: "/data/recordings/", segmentSeconds: 300 });
     expect(args.slice(-5)).toEqual([
       "-flags", "+global_header", "-f", "tee",
@@ -158,7 +158,7 @@ describe("render", () => {
     expect(graph).toContain("overlay=0:430:enable='gte(t,6)'");
     expect(graph).toContain("setpts=(PTS-STARTPTS)/4");
     // The vote band (84 px at 720p) is cut off; the panel sits right.
-    expect(graph).toContain("crop=922:636:0:0");
+    expect(graph).toContain("crop=922:612:0:0");
     expect(graph).toContain("crop=340:366:928:52");
     // Sped-up clips play silence, not chipmunk audio.
     expect(graph).toContain("anullsrc=r=48000:cl=stereo,atrim=0:8");

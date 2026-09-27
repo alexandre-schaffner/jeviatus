@@ -94,7 +94,7 @@ function escapeXml(s: string): string {
 }
 
 function html(name: string): string {
-  return `<div id="jevc-bubble" style="position:absolute;left:6px;bottom:198px;max-width:360px;background:#fff;color:${INK};border:3px solid ${INK};border-radius:16px;padding:8px 13px 10px;box-shadow:4px 4px 0 ${INK};font:800 16px/1.3 'Helvetica Neue',Arial,sans-serif;transform-origin:30px 100%;transform:scale(.6);opacity:0;transition:transform .18s cubic-bezier(.3,1.6,.6,1),opacity .15s">
+  return `<div id="jevc-bubble" style="position:absolute;left:6px;bottom:198px;max-width:330px;background:#fff;color:${INK};border:3px solid ${INK};border-radius:16px;padding:8px 13px 10px;box-shadow:4px 4px 0 ${INK};font:800 16px/1.3 'Helvetica Neue',Arial,sans-serif;transform-origin:30px 100%;transform:scale(.6);opacity:0;transition:transform .18s cubic-bezier(.3,1.6,.6,1),opacity .15s">
   <div id="jevc-reply" style="display:none;font:800 12px/1.2 'Helvetica Neue',Arial,sans-serif;color:#0f7a50;margin-bottom:3px"></div>
   <div><span id="jevc-shown"></span><span id="jevc-rest" style="color:transparent"></span></div>
   <div style="position:absolute;left:44px;bottom:-12px;width:18px;height:18px;background:#fff;border-right:3px solid ${INK};border-bottom:3px solid ${INK};transform:rotate(45deg)"></div>
