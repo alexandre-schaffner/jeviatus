@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { build, type Plugin } from "esbuild";
@@ -12,8 +12,11 @@ const source = path.join(root, "extension");
 const outArg = process.argv.indexOf("--out");
 const output = outArg > 0 ? path.resolve(process.argv[outArg + 1]!) : path.join(root, "dist", "jev-openfront-extension");
 
-rmSync(output, { recursive: true, force: true });
-mkdirSync(output, { recursive: true });
+// Build next to the output and swap it in at the end: the stream's browser
+// loads the output folder, and a failed build mustn't leave it empty.
+const staging = `${output}.building`;
+rmSync(staging, { recursive: true, force: true });
+mkdirSync(staging, { recursive: true });
 
 const openfrontCommit = await gitHead(path.join(root, "vendor", "OpenFrontIO"));
 const harness = await harnessCommit();
@@ -34,7 +37,7 @@ const vendorPatches: Plugin = {
 // tsconfig also supplies the `src/*` alias into the submodule.
 await build({
   entryPoints: ["hook", "content", "background", "popup"].map((name) => path.join(source, "src", `${name}.ts`)),
-  outdir: output,
+  outdir: staging,
   bundle: true,
   format: "iife",
   target: ["chrome120"],
@@ -46,15 +49,17 @@ await build({
 });
 
 for (const file of ["manifest.json", "popup.html", "popup.css", "README.md"]) {
-  cpSync(path.join(source, file), path.join(output, file));
+  cpSync(path.join(source, file), path.join(staging, file));
 }
 // The decision overlay is shared with the harness (harness/overlay): same
 // page, fed over postMessage instead of SSE.
-cpSync(path.join(root, "harness", "overlay", "index.html"), path.join(output, "overlay.html"));
-cpSync(path.join(root, "harness", "overlay", "overlay.js"), path.join(output, "overlay.js"));
-cpSync(path.join(root, "vendor", "OpenFrontIO", "LICENSE"), path.join(output, "OPENFRONT-LICENSE"));
+cpSync(path.join(root, "harness", "overlay", "index.html"), path.join(staging, "overlay.html"));
+cpSync(path.join(root, "harness", "overlay", "overlay.js"), path.join(staging, "overlay.js"));
+cpSync(path.join(root, "vendor", "OpenFrontIO", "LICENSE"), path.join(staging, "OPENFRONT-LICENSE"));
 
-writeFileSync(path.join(output, "BUILD.txt"), `OpenFront submodule: ${openfrontCommit}\nHarness: ${harness}\n`);
+writeFileSync(path.join(staging, "BUILD.txt"), `OpenFront submodule: ${openfrontCommit}\nHarness: ${harness}\n`);
+rmSync(output, { recursive: true, force: true });
+renameSync(staging, output);
 console.log(`Built unpacked extension at ${output}`);
 
 async function gitHead(cwd: string): Promise<string> {
