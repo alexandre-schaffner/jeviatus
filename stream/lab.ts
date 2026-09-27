@@ -247,14 +247,17 @@ export class Lab {
 
   // The worktree shares this checkout's dependencies and OpenFront. A checkout
   // turns the submodule path back into an empty folder, so this runs after each.
+  // A link into another checkout (the stream moved, or that checkout is gone)
+  // is pointed back at this one.
   private link(): void {
     for (const rel of ["vendor/OpenFrontIO", "node_modules"]) {
       const at = path.join(this.wt, rel);
+      const target = path.join(this.o.repo, rel);
       const st = fs.lstatSync(at, { throwIfNoEntry: false });
-      if (st?.isSymbolicLink()) continue;
+      if (st?.isSymbolicLink() && fs.readlinkSync(at) === target) continue;
       if (st?.isDirectory() && fs.readdirSync(at).length > 0) throw new Error(`${at} is a real folder; not replacing it`);
       fs.rmSync(at, { recursive: true, force: true });
-      fs.symlinkSync(path.join(this.o.repo, rel), at);
+      fs.symlinkSync(target, at);
     }
   }
 
