@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "setup": "git submodule update --init --recursive && cd vendor/OpenFrontIO && npm run inst",
+    "setup": "git submodule update --init --recursive && cd vendor/OpenFrontIO && npm ci --ignore-scripts --engine-strict=false",
     "server": "cd vendor/OpenFrontIO && npm run dev",
     "play": "bun harness/cli.ts",
     "build:extension": "bun scripts/build-extension.ts",
