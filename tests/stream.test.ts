@@ -9,6 +9,7 @@ import { GitHubBallot, pick, rank, type BallotEntry } from "../stream/ballot";
 import { bandText, type BandState } from "../stream/band";
 import { formatTokens, parseBribe, parseMemo, type ParsedTransaction, prFromAmount, SolanaBribes } from "../stream/bribes";
 import { ingestUrl, loadBribeConfig, loadOutputs } from "../stream/config";
+import { bandDesign, bandLines, fit, textWidth } from "../stream/bandLayout";
 import { bandHeight, describeOutputs, ffmpegArgs, redact, screenSize, slaveFailure } from "../stream/encoder";
 import { GPU_SHIM, prepareStorage, REVEAL_FFA_CARD, SNAPSHOT, validUsername, VIEWPORT_ORIGIN } from "../stream/openfront";
 import example from "../strategies/example.json";
@@ -116,7 +117,7 @@ describe("ballot", () => {
 describe("broadcast", () => {
   const kick = { name: "kick" as const, url: "rtmps://ingest.example:443/app/sk_live_secret" };
   const cfg = { outputs: [kick], width: 1280, height: 720, fps: 30, videoKbps: 4500, audio: false, display: ":99" };
-  const band = { height: bandHeight(720), files: { headline: "/tmp/b/headline.txt", playing: "/tmp/b/playing.txt", status: "/tmp/b/status.txt" } };
+  const band = { dir: "/tmp/b", bribes: false, lab: true };
 
   test("ffmpeg: 2 s GOP, CBR-ish, FLV to the ingest, the band padded under the browser", () => {
     const args = ffmpegArgs(cfg, band);
@@ -129,7 +130,8 @@ describe("broadcast", () => {
     expect(args.at(-1)).toBe(kick.url);
     expect(args.at(-2)).toBe("flv");
     expect(at("-filter_complex")).toContain("pad=1280:720:0:0");
-    expect(at("-filter_complex")).toContain("textfile='/tmp/b/status.txt':reload=1:expansion=none");
+    expect(at("-filter_complex")).toContain("textfile='/tmp/b/now.txt':reload=1:expansion=none");
+    expect(at("-filter_complex")).toContain("textfile='/tmp/b/clock.txt':reload=1");
     expect(screenSize(cfg).height + bandHeight(720)).toBe(720);
   });
 
@@ -144,15 +146,48 @@ describe("broadcast", () => {
     expect(ingestUrl("rtmps://other.example/live", "k")).toBe("rtmps://other.example/live/k");
   });
 
-  test("band text names the repo, the strategy in play and the ballot", () => {
-    const entry = { number: 7, title: "t", author: "ann", url: "u", votes: 12, strategy: { name: "Turtle", doctrine: "d" } };
-    const t = bandText({ repo: "o/r", playing: entry, playingPot: null, ballot: { entries: [entry], rejected: [], fetchedAt: 0 }, bribe: null, status: "LIVE", games: 3, lastResult: "eliminated at 9:12" });
-    expect(t["headline.txt"]).toContain("github.com/o/r/pulls");
-    expect(t["playing.txt"]).toContain('"Turtle"  (PR #7 by @ann, 12 votes)');
-    expect(t["playing.txt"]).toContain("#7 Turtle (12)");
-    expect(t["status.txt"]).toBe("LIVE  |  games streamed: 3, last: eliminated at 9:12");
+  const idle: BandState = { repo: "o/r", playing: null, playingPot: null, ballot: null, bribe: null, status: "", clock: null, standing: null, games: 0, wins: 0, lastResult: null, lab: null };
+
+  test("band text names the repo, the strategy in play, the next on the ballot and the match", () => {
+    const entry = (number: number, votes: number, name: string) => ({ number, title: "t", author: "ann", url: "u", votes, strategy: { name, doctrine: "d" } });
+    const turtle = entry(7, 12, "Turtle");
+    const t = bandText({ ...idle, playing: turtle, ballot: { entries: [turtle, entry(3, 2, "Rush")], rejected: [], fetchedAt: 0 }, status: "UncleFred attacks Jev", clock: "9:12", standing: "#4 of 23", games: 3, wins: 1, lastResult: "eliminated at 9:12" });
+    expect(t["vote.txt"]).toContain("github.com/o/r/pulls");
+    expect(t["strategy.txt"]).toBe('"Turtle"  ·  PR #7 by @ann, 12 votes      NEXT UP  #3 Rush (2)');
+    expect(t["now.txt"]).toBe("UncleFred attacks Jev");
+    expect(t["game.txt"]).toBe("GAME #4  ·  LIVE");
+    expect(t["clock.txt"]).toBe("9:12");
+    expect(t["standing.txt"]).toBe("#4 of 23");
+    expect(t["record.txt"]).toBe("1 win in 3 games");
     expect(t["bribe.txt"]).toBeUndefined();
-    expect(bandText({ repo: "o/r", playing: null, playingPot: null, ballot: null, bribe: null, status: "", games: 0, lastResult: null })["playing.txt"]).toContain("own judgment");
+    // Between matches: the next game's number, and how the last one went.
+    const between = bandText({ ...idle, games: 3, wins: 1, lastResult: "eliminated at 9:12" });
+    expect(between["strategy.txt"]).toContain("own judgment");
+    expect(between["clock.txt"]).toBe("#4");
+    expect(between["standing.txt"]).toBe("Last: eliminated at 9:12");
+    // Never an empty file: ffmpeg may fail to map one.
+    expect(between["lab.txt"]).toBe(" ");
+  });
+
+  test("band text fits its slot: details drop whole, the rest is cut with an ellipsis", () => {
+    const design = bandDesign({ width: 1280, height: 720, bribes: false, lab: true });
+    const slot = (file: string) => design.slots.find((s) => s.file === file)!;
+    const long = "Everyone gangs up on the leader, then Jev backstabs them all one by one";
+    const t = bandText({ ...idle, playing: { number: 7, title: "t", author: "a-very-long-github-handle", url: "u", votes: 3, strategy: { name: long.slice(0, 40), doctrine: "d" } }, status: `${long} ${long}`, ballot: { entries: [{ number: 9, title: "t", author: "b", url: "u", votes: 1, strategy: { name: long.slice(0, 40), doctrine: "d" } }], rejected: [], fetchedAt: 0 } }, design);
+    for (const f of ["now.txt", "strategy.txt"] as const) expect(textWidth(t[f]!, slot(f).font, slot(f).size)).toBeLessThanOrEqual(slot(f).maxWidth);
+    expect(t["now.txt"]).toEndWith("…");
+    // The ballot's next entry doesn't fit whole, so it's left out rather than cut.
+    expect(t["strategy.txt"]).not.toContain("NEXT UP");
+    expect(fit("short", "regular", 16, 500)).toBe("short");
+  });
+
+  test("the lab row: the build under test, its games and how they went", () => {
+    const lab = { build: "change 3", title: "Gate attacks", games: 2, wins: 1, meanPlacement: 6.5, needed: 4, everyGames: 2 };
+    // The wins would run past the panel: they drop out whole.
+    expect(bandText({ ...idle, games: 5, lab })["lab.txt"]).toBe("change 3 · 2/4 games · avg place 6.5");
+    expect(bandText({ ...idle, games: 5, lab: { ...lab, meanPlacement: null } })["lab.txt"]).toBe("change 3 · 2/4 games · 1 win");
+    expect(bandText({ ...idle, games: 5, lab: { ...lab, games: 4 } })["lab.txt"]).toStartWith("change 3: verdict after game 6");
+    expect(bandText({ ...idle, games: 1, lab: { ...lab, build: null } })["lab.txt"]).toBe("first session after game 2");
   });
 
   test("page expressions are valid JavaScript", () => {
@@ -199,7 +234,7 @@ describe("platforms", () => {
       { name: "pumpfun" as const, url: "rtmps://p/x/pk" },
     ];
     const cfg = { outputs, width: 1280, height: 720, fps: 30, videoKbps: 4500, audio: false, display: ":99" };
-    const band = { height: bandHeight(720, 4), files: { headline: "/b/h", playing: "/b/p", bribe: "/b/b", status: "/b/s" } };
+    const band = { dir: "/b", bribes: true, lab: true };
     const args = ffmpegArgs(cfg, band, { dir: "/rec", segmentSeconds: 300 });
     expect(args.at(-1)).toBe(
       "[f=flv:onfail=abort]rtmps://k/app/sk|[f=flv:onfail=ignore]rtmps://p/x/pk|[f=segment:segment_time=300:segment_format=matroska:strftime=1:reset_timestamps=1:onfail=ignore]/rec/%Y%m%dT%H%M%SZ.mkv",
@@ -210,18 +245,36 @@ describe("platforms", () => {
     expect(slaveFailure("frame= 100", outputs)).toBeNull();
   });
 
-  test("the bribe line makes the band a line taller", () => {
-    expect(bandHeight(720, 4)).toBe(108);
-    expect(bandHeight(720)).toBe(84);
-    expect(screenSize({ width: 1280, height: 720 }, 4).height).toBe(612);
-    const filter = (lines: 3 | 4) => {
-      const files = { headline: "/b/h", playing: "/b/p", status: "/b/s", ...(lines === 4 ? { bribe: "/b/b" } : {}) };
-      const args = ffmpegArgs({ outputs: [{ name: "file", url: "/x.mkv" }], width: 1280, height: 720, fps: 30, videoKbps: 4500, audio: false, display: ":99" }, { height: bandHeight(720, lines), files });
+  test("the bribe strip makes the band a row taller", () => {
+    expect(bandHeight(720, 4)).toBe(132);
+    expect(bandHeight(720)).toBe(108);
+    expect(screenSize({ width: 1280, height: 720 }, 4).height).toBe(588);
+    const filter = (bribes: boolean, lab = true) => {
+      const args = ffmpegArgs({ outputs: [{ name: "file", url: "/x.mkv" }], width: 1280, height: 720, fps: 30, videoKbps: 4500, audio: false, display: ":99" }, { dir: "/b", bribes, lab });
       return args[args.indexOf("-filter_complex") + 1]!;
     };
-    expect(filter(3)).not.toContain("/b/b");
-    expect(filter(4)).toContain("textfile='/b/b'");
-    expect(filter(4)).toContain("drawbox=x=0:y=612");
+    expect(filter(false)).not.toContain("/b/bribe.txt");
+    expect(filter(true)).toContain("textfile='/b/bribe.txt'");
+    expect(filter(true)).toContain("drawbox=x=0:y=588");
+    expect(filter(false, false)).not.toContain("/b/lab.txt");
+  });
+
+  test("every slot of the band stays on the band, inside the output", () => {
+    for (const [width, height] of [[1280, 720], [1920, 1080]] as const) {
+      for (const bribes of [false, true]) {
+        const d = bandDesign({ width, height, bribes, lab: true });
+        expect(d.top).toBe(height - bandHeight(height, bandLines(bribes)));
+        for (const s of d.slots) {
+          expect(s.y).toBeGreaterThanOrEqual(d.top);
+          expect(s.y + s.size).toBeLessThanOrEqual(height);
+          // Fixed labels are as wide as their text; files as wide as their slot.
+          const w = s.text !== undefined ? textWidth(s.text, s.font, s.size) : s.maxWidth;
+          const left = s.align === "right" ? s.x - w : s.x;
+          expect(left).toBeGreaterThanOrEqual(0);
+          expect(left + w).toBeLessThanOrEqual(width);
+        }
+      }
+    }
   });
 });
 
@@ -353,12 +406,16 @@ describe("bribes", () => {
       ballot: { entries: [rush, turtle], rejected: [], fetchedAt: 0 },
       bribe: { wallet: WALLET, ticker: "JEV", decimals: 6, pots: new Map([[7, 1_200_000_000n]]), minPot: 1_000_000n, thanks: null },
       status: "LIVE",
+      clock: null,
+      standing: null,
       games: 0,
+      wins: 0,
       lastResult: null,
+      lab: null,
     };
     const t = bandText(state);
-    expect(t["playing.txt"]).toContain('"Turtle"  (PR #7 by @ann, bribed 50K $JEV)');
-    expect(t["playing.txt"]).toContain("BALLOT  #7 Turtle (2, 1.2K $JEV)  ·  #9 Rush (40)");
+    expect(t["strategy.txt"]).toContain('"Turtle"  ·  PR #7 by @ann, bribed 50K $JEV');
+    expect(t["strategy.txt"]).toContain("NEXT UP  #9 Rush (40)");
     expect(t["bribe.txt"]).toContain(`send $JEV to ${WALLET}`);
     expect(t["bribe.txt"]).toContain("memo #12 or amount ending .000012 backs PR #12");
     expect(bandText({ ...state, bribe: { ...state.bribe!, thanks: "NEW BRIBE" } })["bribe.txt"]).toBe("NEW BRIBE");

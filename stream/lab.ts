@@ -21,9 +21,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { type GameRecord, findTraces, parseTrace } from "../harness/analyze/load";
-import { buildReport, gameRow, renderMoment, renderReport } from "../harness/analyze/report";
+import { aggregate, buildReport, gameRow, renderMoment, renderReport } from "../harness/analyze/report";
 import { comparisonMarkdown, gamesFor, isBetter, measure, outsideAllowlist } from "../harness/improve/measure";
 import { ANALYSIS_DIR, changePrompt, type PastAttempt, parseProposal, PROPOSAL_FILE } from "../harness/improve/prompt";
+import type { LabBand } from "./band";
 import type { Mood } from "./voice";
 import type { Studio } from "./studio";
 
@@ -33,6 +34,8 @@ export interface LabOptions {
   traceDirs: string[];
   extensionDir: string;
   gamesPerBuild: number;
+  // A session every this many games (for the band's "next session").
+  everyGames: number;
   maxMinutes: number;
   model: string | null;
   prs: boolean;
@@ -179,6 +182,17 @@ export class Lab {
       .sort((a, b) => path.basename(path.dirname(b)).localeCompare(path.basename(path.dirname(a))))
       .slice(0, n);
     return files.flatMap((f) => parseTrace(fs.readFileSync(f, "utf8"), path.dirname(f))).filter((g) => g.steps.length > 0);
+  }
+
+  // For the band: the build the games are measuring and how its games went.
+  summary(): LabBand {
+    const s = this.state;
+    const build = s.candidate ?? s.baseline;
+    const base = { needed: this.o.gamesPerBuild, everyGames: this.o.everyGames };
+    if (!build) return { build: null, title: null, games: 0, wins: 0, meanPlacement: null, ...base };
+    const games = this.gamesOn(build.sha);
+    const a = aggregate(build.label, games.map(gameRow));
+    return { build: build.label, title: build.title ?? null, games: games.length, wins: a.wins, meanPlacement: a.meanPlacement, ...base };
   }
 
   // --- worktree -----------------------------------------------------------------------
