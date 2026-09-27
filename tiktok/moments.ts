@@ -66,7 +66,9 @@ export function parseTrace(jsonl: string): GameTrace {
     }
     const tick = num(e.tick);
     if (tick !== null) g.lastTick = Math.max(g.lastTick, tick);
-    if (e.type === "run") {
+    // The extension can send its header again mid-game (after a reconnect):
+    // tick 0 is the first one's start.
+    if (e.type === "run" && g.startedAtMs === null) {
       const at = Date.parse(String(e.startedAt ?? e.at ?? ""));
       g.startedAtMs = Number.isFinite(at) ? at : null;
       g.map = typeof e.map === "string" ? e.map : null;
