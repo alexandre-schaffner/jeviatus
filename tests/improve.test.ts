@@ -29,6 +29,7 @@ describe("games per build", () => {
       game("never played", A, { steps: [] }),
       game("still running", A, { summary: null }),
       game("died, not yet closed", A, { summary: null, death: { tick: 600, minutes: 1, landShareBefore: 0.1, peakLandShare: 0.1, attackers: [] } }),
+      game("out of API credits", A, { steps: [{ ...game("x", A).steps[0], calls: 3, failedCalls: 3 }] }),
     ];
     expect(gamesFor(games, A).map((g) => g.id)).toEqual(["ok", "died, not yet closed"]);
   });

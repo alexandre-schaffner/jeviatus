@@ -7,11 +7,18 @@ import { type Aggregate, aggregate, buildReport, gameRow } from "../analyze/repo
 
 // A game counts toward a build when that exact commit played it (the
 // extension stamps its commit into the trace header), Jev actually made
-// decisions, and the game is over for Jev.
+// decisions, and the game is over for Jev. A game where most Jev calls failed
+// (out of API credits, an outage) measures the outage, not the build.
 export function gamesFor(games: GameRecord[], commit: string): GameRecord[] {
   return games.filter(
-    (g) => g.harnessCommit === commit && g.steps.length > 0 && (g.summary !== null || g.death !== null || g.streamResult !== null),
+    (g) => g.harnessCommit === commit && g.steps.length > 0 && (g.summary !== null || g.death !== null || g.streamResult !== null) && jevWorked(g),
   );
+}
+
+export function jevWorked(g: GameRecord): boolean {
+  const calls = g.steps.reduce((n, s) => n + s.calls, 0);
+  const failed = g.steps.reduce((n, s) => n + s.failedCalls, 0);
+  return calls > 0 && failed / calls < 0.5;
 }
 
 export interface BuildResult {
