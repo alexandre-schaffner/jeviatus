@@ -1,5 +1,5 @@
 // A playstyle for Jev, proposed as a pull request that adds one JSON file
-// under strategies/ and voted onto the stream by viewers. Strategies are data
+// under strategies/; the stream plays the newest one its creator merged. Strategies are data
 // only: a name, a short natural-language doctrine Jev reads as state, and an
 // optional starting goal. A strategy PR never runs code.
 
@@ -57,5 +57,5 @@ export function parseStrategy(value: unknown): StrategyParse {
 
 // What Jev sees, as the `strategy` block of its state.
 export function strategyState(s: Strategy): Record<string, unknown> {
-  return { name: s.name, doctrine: s.doctrine, chosen_by: "the stream's viewers, by vote" };
+  return { name: s.name, doctrine: s.doctrine, chosen_by: "proposed by a viewer, picked by the stream's creator" };
 }

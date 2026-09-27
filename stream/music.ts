@@ -1,12 +1,12 @@
 // Background music: a shuffled playlist, looped forever, fed to the audio mix
-// (voice.ts VoicePump) under the commentator. Your own tracks in MUSIC_DIR
+// (audio.ts AudioPump). Your own tracks in MUSIC_DIR
 // play if there are any (make sure you may stream them); otherwise the
 // original lofi composed by lofi.ts. Tracks are decoded by ffmpeg one ahead,
 // off the audio clock, so a slow decode never stalls the stream.
 
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
-import type { MusicSource } from "./voice";
+import type { MusicSource } from "./audio";
 
 const RATE = 48_000;
 const FADE_FRAMES = RATE * 2;

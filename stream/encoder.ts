@@ -1,7 +1,6 @@
 // ffmpeg command for the broadcast: grab the X display (with the pointer, so
 // viewers see the clicks), take the browser's audio from PulseAudio (or
-// silence) plus the stream's own mix (the commentator's voice over the lofi,
-// raw PCM on pipe:3), draw the vote band under the game, encode H.264/AAC with a fixed
+// silence) plus the stream's own mix (the lofi, raw PCM on pipe:3), draw the vote band under the game, encode H.264/AAC with a fixed
 // 2 s keyframe interval (Kick's ingest rejects longer GOPs), and push FLV over
 // RTMPS to every platform (Kick, pump.fun) from that one encode. Optionally
 // the same encode also goes to rolling recording segments
@@ -11,7 +10,7 @@ import path from "node:path";
 import { BAND_COLORS, BAND_FONTS, type BandBox, bandDesign, type BandSlot } from "./bandLayout";
 import type { StreamConfig, StreamOutput } from "./config";
 import { SEGMENT_PATTERN } from "./recordings";
-import { OUT_RATE } from "./voice";
+import { OUT_RATE } from "./audio";
 
 export { bandHeight, bandLines, screenSize } from "./bandLayout";
 
@@ -46,9 +45,9 @@ export function ffmpegArgs(
     // x11: grab the Xvfb screen (the container). pipe: JPEG frames on stdin
     // (stream/screencast.ts, on macOS).
     source?: "x11" | "pipe";
-    // The stream's own mix (voice over music): 48 kHz stereo s16le on
-    // pipe:3 (stream/voice.ts).
-    voice?: boolean;
+    // The stream's own mix (the music): 48 kHz stereo s16le on pipe:3
+    // (stream/audio.ts).
+    mix?: boolean;
   },
   band: BandLayout,
   record?: RecordTarget,
@@ -59,9 +58,9 @@ export function ffmpegArgs(
   const screen = { width: c.width, height: design.top };
   const pipe = c.source === "pipe";
   // Inputs: 0 video; then the game audio (PulseAudio, or silence), unless the
-  // Mac path's only sound is the voice; then the voice.
-  const game = !(pipe && c.voice);
-  const voiceIn = game ? 2 : 1;
+  // Mac path's only sound is the mix; then the mix.
+  const game = !(pipe && c.mix);
+  const mixIn = game ? 2 : 1;
   const filter = [
     // Screencast frames can come a pixel off the requested size.
     `[0:v]${pipe ? `scale=${screen.width}:${screen.height},` : ""}pad=${c.width}:${c.height}:0:0:color=${BAND_COLORS.bg}`,
@@ -91,9 +90,9 @@ export function ffmpegArgs(
         ? ["-thread_queue_size", "1024", "-f", "pulse", "-i", "stream.monitor"]
         : ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]),
     // Raw PCM needs no probing: without these, ffmpeg waits for 5 s of it.
-    ...(c.voice ? ["-thread_queue_size", "1024", "-analyzeduration", "0", "-probesize", "32", "-f", "s16le", "-ar", String(OUT_RATE), "-ch_layout", "stereo", "-i", "pipe:3"] : []),
-    "-filter_complex", `${filter}[v]${audioFilter(c.voice === true, game, voiceIn)}`,
-    "-map", "[v]", "-map", c.voice ? "[a]" : "1:a",
+    ...(c.mix ? ["-thread_queue_size", "1024", "-analyzeduration", "0", "-probesize", "32", "-f", "s16le", "-ar", String(OUT_RATE), "-ch_layout", "stereo", "-i", "pipe:3"] : []),
+    "-filter_complex", `${filter}[v]${audioFilter(c.mix === true, game, mixIn)}`,
+    "-map", "[v]", "-map", c.mix ? "[a]" : "1:a",
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-pix_fmt", "yuv420p",
@@ -113,11 +112,11 @@ export function ffmpegArgs(
 }
 
 // The stream's mix alone, or with the game's sound under it.
-function audioFilter(voice: boolean, game: boolean, voiceIn: number): string {
-  if (!voice) return "";
+function audioFilter(mix: boolean, game: boolean, mixIn: number): string {
+  if (!mix) return "";
   const fmt = "aformat=sample_rates=48000:channel_layouts=stereo";
-  if (!game) return `;[${voiceIn}:a]${fmt}[a]`;
-  return `;[1:a]${fmt},volume=0.7[g];[${voiceIn}:a]${fmt}[m];[g][m]amix=inputs=2:normalize=0[a]`;
+  if (!game) return `;[${mixIn}:a]${fmt}[a]`;
+  return `;[1:a]${fmt},volume=0.7[g];[${mixIn}:a]${fmt}[m];[g][m]amix=inputs=2:normalize=0[a]`;
 }
 
 const isFile = (target: string) => !/^[a-z]+:\/\//i.test(target);

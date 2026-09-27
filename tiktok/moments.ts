@@ -17,6 +17,24 @@ export interface Moment {
   facts: Record<string, string | number>;
   // Rough excitement before Jev weighs in, 0..1.
   heat: number;
+  // The call Jev made that led here, shown in the clip as "Jev's brain".
+  brain?: Brain;
+}
+
+// One decision step, as the viewer should see it: what Jev chose, what else
+// it weighed (its route probabilities), and how sure it was.
+export interface Brain {
+  tick: number;
+  route: string;
+  held: boolean;
+  holdReason?: string;
+  // Route options, most likely first.
+  options: { key: string; p: number }[];
+  // The player the action was aimed at, by name.
+  target?: string;
+  // e.g. "30% troops, sized to finish them (~3k gold)".
+  detail?: string;
+  goal?: string;
 }
 
 interface PlayerView {
@@ -36,6 +54,7 @@ export interface Sample {
   players: Map<string, PlayerView>;
   record: { action: string; target?: string; detail?: string } | null;
   sent: string[];
+  brain: Brain | null;
 }
 
 export interface GameTrace {
@@ -48,6 +67,8 @@ export interface GameTrace {
   death: { tick: number; landShareBefore: number | null; peakLandShare: number | null; attackers: string[] } | null;
   won: boolean;
   lastTick: number;
+  // Share of decision steps whose Jev call failed (out of credits, timeouts).
+  jevFailedShare: number;
 }
 
 type Json = Record<string, unknown>;
@@ -55,7 +76,9 @@ const num = (v: unknown): number | null => (typeof v === "number" && Number.isFi
 const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 
 export function parseTrace(jsonl: string): GameTrace {
-  const g: GameTrace = { startedAtMs: null, map: null, humans: null, strategy: null, samples: [], death: null, won: false, lastTick: 0 };
+  const g: GameTrace = { startedAtMs: null, map: null, humans: null, strategy: null, samples: [], death: null, won: false, lastTick: 0, jevFailedShare: 0 };
+  let steps = 0;
+  let failed = 0;
   for (const line of jsonl.split("\n")) {
     if (!line.trim()) continue;
     let e: Json;
@@ -75,6 +98,8 @@ export function parseTrace(jsonl: string): GameTrace {
       g.humans = num(e.players);
       g.strategy = (e.strategy as Json | null)?.name as string | undefined ?? null;
     } else if (e.type === "step" && tick !== null) {
+      steps++;
+      if ((e.calls as Json[] | undefined)?.some((c) => c.label === "route" && c.error !== undefined)) failed++;
       const s = sample(e, tick);
       if (s) g.samples.push(s);
     } else if (e.type === "death" && tick !== null) {
@@ -92,6 +117,7 @@ export function parseTrace(jsonl: string): GameTrace {
     }
   }
   g.samples.sort((a, b) => a.tick - b.tick);
+  g.jevFailedShare = steps > 0 ? failed / steps : 0;
   return g;
 }
 
@@ -109,6 +135,25 @@ function sample(e: Json, tick: number): Sample | null {
   const decision = e.decision as Json | undefined;
   const record = decision?.record as Sample["record"] | undefined;
   const intents = Array.isArray(e.intents) ? (e.intents as Json[]) : [];
+  const route = (calls.find((c) => c.label === "route")?.answers as Json | undefined)?.route as { probabilities?: Record<string, number> } | undefined;
+  const probs = Object.entries(route?.probabilities ?? {})
+    .filter((kv): kv is [string, number] => typeof kv[1] === "number")
+    .map(([key, p]) => ({ key, p }))
+    .sort((a, b) => b.p - a.p);
+  const targetRef = typeof record?.target === "string" ? record.target : undefined;
+  const brain: Brain | null =
+    typeof decision?.route === "string" && probs.length > 0
+      ? {
+          tick,
+          route: decision.route,
+          held: decision.held === true,
+          ...(typeof decision.holdReason === "string" ? { holdReason: decision.holdReason } : {}),
+          options: probs,
+          ...(targetRef ? { target: players.get(targetRef)?.name ?? targetRef } : {}),
+          ...(typeof record?.detail === "string" ? { detail: record.detail } : {}),
+          ...(typeof (e.memory as Json | undefined)?.goal === "string" ? { goal: (e.memory as Json).goal as string } : {}),
+        }
+      : null;
   return {
     tick,
     landShare: num(me.land_share) ?? 0,
@@ -118,6 +163,7 @@ function sample(e: Json, tick: number): Sample | null {
     players,
     record: record && typeof record.action === "string" ? record : null,
     sent: intents.filter((i) => i.sent === true).map((i) => String(i.desc ?? "")),
+    brain,
   };
 }
 
@@ -132,7 +178,12 @@ const SURGE_WINDOW = 60 * TICKS_PER_SEC;
 const CONQUEST_WINDOW = 180 * TICKS_PER_SEC;
 const WIPE_WAIT = 30 * TICKS_PER_SEC;
 
+// Past this, Jev wasn't really playing (its calls failed and it held), so
+// nothing that happened is Jev's doing: no clips.
+export const MAX_JEV_FAILED_SHARE = 0.25;
+
 export function findMoments(g: GameTrace): Moment[] {
+  if (g.jevFailedShare > MAX_JEV_FAILED_SHARE) return [];
   const out: Moment[] = [];
   const s = g.samples;
   const name = (ref: string | undefined, at: Sample) => (ref ? (at.players.get(ref)?.name ?? ref) : "someone");
@@ -269,7 +320,8 @@ export function findMoments(g: GameTrace): Moment[] {
       tick: d.tick,
       fromTick: d.tick - 10 * TICKS_PER_SEC,
       what: `Jev was eliminated at ${clock(d.tick)}${d.attackers.length ? ` by ${d.attackers.join(" and ")}` : ""}${peak > 0 ? `, after peaking at ${pct(peak)} of the map` : ""}`,
-      facts: { killer: d.attackers[0] ?? "someone", peak: pct(peak), time: clock(d.tick) },
+      // Facts left out drop the phrases that need them ("Peaked at 0%").
+      facts: { ...(d.attackers[0] ? { killer: d.attackers[0] } : {}), ...(peak >= 0.01 ? { peak: pct(peak) } : {}), time: clock(d.tick) },
       heat: clamp01(0.35 + peak * 4),
     });
   }
@@ -284,7 +336,33 @@ export function findMoments(g: GameTrace): Moment[] {
     });
   }
 
-  return dedupe(out).sort((a, b) => a.tick - b.tick);
+  return dedupe(out)
+    .map((m) => {
+      const brain = keyDecision(m, s);
+      return brain ? { ...m, brain } : m;
+    })
+    .sort((a, b) => a.tick - b.tick);
+}
+
+const AIMED = new Set(["attack_player", "break_alliance", "naval_invasion", "nuke"]);
+
+// The decision behind a moment: the order that started it (the attack on the
+// player who fell, the launch, the betrayal), the most confident expansion of
+// a surge, or simply Jev's last call before the payoff (its last one alive,
+// for a last stand).
+export function keyDecision(m: Moment, samples: Sample[]): Brain | null {
+  const upTo = samples.filter((x) => x.brain && x.tick <= m.tick);
+  const window = upTo.filter((x) => x.tick >= m.fromTick - 10 * TICKS_PER_SEC).map((x) => x.brain!);
+  const acted = window.filter((b) => !b.held);
+  const target = typeof m.facts.target === "string" ? m.facts.target : undefined;
+  let pick: Brain | undefined;
+  if (m.kind === "surge") {
+    pick = acted.filter((b) => b.route === "expand").sort((a, b) => b.options[0]!.p - a.options[0]!.p)[0];
+  } else if (target) {
+    pick = acted.find((b) => AIMED.has(b.route) && b.target === target);
+  }
+  if (m.kind === "last_stand") pick = upTo.at(-1)?.brain ?? undefined;
+  return pick ?? acted.at(-1) ?? upTo.at(-1)?.brain ?? null;
 }
 
 // The footage a moment's clip would show: its build-up (6 s, or the whole

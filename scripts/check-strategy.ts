@@ -46,4 +46,4 @@ try {
 }
 const parsed = parseStrategy(json);
 if (!parsed.ok) fail(`${file}: ${parsed.error}`);
-else console.log(`✓ ${file}: "${parsed.strategy.name}" is a valid strategy. Once a maintainer approves it, 👍 votes put it on the stream.`);
+else console.log(`✓ ${file}: "${parsed.strategy.name}" is a valid strategy. It's in the stream's review queue: 👍 votes and bribes promote it, and once it's merged Jev plays it.`);

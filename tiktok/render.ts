@@ -1,11 +1,13 @@
 // One ffmpeg run per TikTok: cut each moment from the recording, reframe the
-// 16:9 broadcast into 9:16 (blurred backdrop, the game, Jev's decision panel
-// underneath), punch in on the payoff, burn in the catchphrase, flash
-// between clips, and lay the soundtrack under the ducked game audio. Pure:
-// returns the arguments plus the small text files drawtext reads.
+// 16:9 broadcast into 9:16 (blurred backdrop, the whole game view, and a
+// "Jev's brain" card underneath with the call Jev made), punch in on the
+// payoff, burn in the catchphrase, flash between clips, and lay the
+// soundtrack under the ducked game audio. Pure: returns the arguments plus
+// the small text files drawtext reads.
 
 import path from "node:path";
 import { bandHeight } from "../stream/encoder";
+import type { BrainCard } from "./brain";
 import { beatExpression, type Music } from "./music";
 
 export const OUT = { width: 1080, height: 1920, fps: 30 } as const;
@@ -22,6 +24,8 @@ export interface Clip {
   teaser: string;
   phrase: string;
   stat: string | null;
+  // Jev's call behind the moment (brain.ts), and the game clock it was made at.
+  brain?: BrainCard & { clock: string };
 }
 
 export interface Source {
@@ -32,7 +36,8 @@ export interface Source {
   band: boolean;
   // Its lines of text: 3, or 4 with the bribe line (default 3).
   bandLines?: number;
-  // Show the Jev extension's panel (top right of the broadcast) as "Jev's brain".
+  // Show "Jev's brain" under the game: the clip's decision card, or for a
+  // clip without one, the extension's own panel cut from the broadcast.
   panel: boolean;
 }
 
@@ -98,18 +103,21 @@ export const charEmFor = (font: string) => (/impact|anton|bebas|oswald/i.test(pa
 export function layout(s: Source) {
   const k = s.height / 720;
   const gameH = s.band ? s.height - bandHeight(s.height, s.bandLines) : s.height;
-  // The extension's panel: 340x366 at the top right of a 720p page.
+  // The whole game view, uncropped: everything above the band.
+  const game = { x: 0, y: 0, w: s.width, h: gameH };
+  const gameOut = { y: 450, h: even((game.h * OUT.width) / game.w) };
+  // The extension's panel (top right of a 720p page), for clips without a card.
   const panel = { x: even(s.width - 353 * k), y: even(52 * k), w: even(340 * k), h: even(366 * k) };
-  // With the panel shown, the game is everything left of it; without, a
-  // centered square.
-  const game = s.panel ? { x: 0, y: 0, w: even(panel.x - 7 * k), h: gameH } : { x: even((s.width - gameH) / 2), y: 0, w: gameH, h: gameH };
-  const gameOut = { y: 430, h: even((game.h * OUT.width) / game.w) };
-  const panelScale = 1.5 / k;
-  const panelOut = { w: even(panel.w * panelScale), h: even(panel.h * panelScale), y: gameOut.y + gameOut.h + 96 };
-  // Captions live above the game, below TikTok's top bar.
+  const panelScale = 1.3 / k;
+  const panelOut = { w: even(panel.w * panelScale), h: even(panel.h * panelScale), y: gameOut.y + gameOut.h + 90 };
+  // Captions live above the game, below TikTok's top bar; the card below it,
+  // clear of TikTok's caption and buttons at the bottom.
   const caption = { y: 160, h: gameOut.y - 16 - 160 };
-  return { game, gameOut, panel, panelOut, caption, labelY: gameOut.y + gameOut.h + 40 };
+  const card = { x: 60, y: gameOut.y + gameOut.h + 36, w: 960, h: 492 };
+  return { game, gameOut, panel, panelOut, caption, card, labelY: gameOut.y + gameOut.h + 40 };
 }
+
+export const PUNCH_ZOOM = 1.12;
 
 interface TextFile {
   path: string;
@@ -125,10 +133,43 @@ export function renderArgs(plan: VideoPlan): { args: string[]; files: TextFile[]
     files.push({ path: p, content });
     return p;
   };
-  const text = (file: string, o: { size: number | string; y: number; color?: string; border?: number; box?: boolean; enable?: string }) =>
+  // Centered unless `x` is given (a number, or an expression with text_w).
+  const text = (file: string, o: { size: number | string; y: number; x?: number | string; color?: string; border?: number; box?: boolean; enable?: string }) =>
     `drawtext=textfile='${escapePath(file)}':expansion=none:fontfile='${escapePath(font)}':fontsize=${o.size}:fontcolor=${o.color ?? "white"}` +
-    `:borderw=${o.border ?? 6}:bordercolor=black:x=(w-text_w)/2:y=${Math.round(o.y)}` +
+    `:borderw=${o.border ?? 6}:bordercolor=black:x=${o.x === undefined ? "(w-text_w)/2" : typeof o.x === "number" ? Math.round(o.x) : `'${o.x}'`}:y=${Math.round(o.y)}` +
     `${o.box ? ":box=1:boxcolor=black@0.6:boxborderw=22" : ""}${o.enable ? `:enable='${o.enable}'` : ""}`;
+  const rect = (x: number, y: number, w: number, h: number, color: string, enable?: string) =>
+    `drawbox=x=${Math.round(x)}:y=${Math.round(y)}:w=${Math.max(1, Math.round(w))}:h=${Math.round(h)}:color=${color}:t=fill${enable ? `:enable='${enable}'` : ""}`;
+  // Jev's brain: what it chose, big; its top options as bars that grow in
+  // one after another; how sure it was. drawbox sizes can't animate, so each
+  // bar grows in ten quick steps.
+  const card = (i: number, b: NonNullable<Clip["brain"]>): string[] => {
+    const C = L.card;
+    const pad = 36;
+    const inner = C.w - 2 * pad;
+    const out = [rect(C.x, C.y, C.w, C.h, "black@0.72"), rect(C.x, C.y, C.w, 6, "0x53e3a6")];
+    out.push(text(textFile(`clip${i}-brain-h.txt`, "JEV'S BRAIN"), { size: 34, x: C.x + pad, y: C.y + 26, color: "0x53e3a6", border: 0 }));
+    out.push(text(textFile(`clip${i}-brain-clock.txt`, `DECIDED AT ${b.clock}`), { size: 30, x: `${C.x + C.w - pad}-text_w`, y: C.y + 30, color: "0x9aa4b2", border: 0 }));
+    const title = fitCaption(b.title, { widthPx: inner, charEm: charEmFor(font), maxSize: 64, minSize: 34, heightPx: 76 });
+    out.push(text(textFile(`clip${i}-brain-title.txt`, title.lines.join(" ")), { size: title.size, x: C.x + pad, y: C.y + 76, border: 0 }));
+    const STEPS = 10;
+    b.options.forEach((o, j) => {
+      const y = C.y + 176 + j * 82;
+      const color = o.chosen ? "white" : "0xb8c0cc";
+      out.push(text(textFile(`clip${i}-brain-o${j}.txt`, o.label), { size: 34, x: C.x + pad, y, color, border: 0 }));
+      out.push(text(textFile(`clip${i}-brain-p${j}.txt`, `${Math.round(o.p * 100)}%`), { size: 34, x: `${C.x + C.w - pad}-text_w`, y, color, border: 0 }));
+      out.push(rect(C.x + pad, y + 46, inner, 18, "white@0.14"));
+      const start = 0.3 + j * 0.15;
+      const fill = inner * o.p;
+      for (let k = 1; k <= STEPS; k++) {
+        const a = r3(start + ((k - 1) * 0.6) / STEPS);
+        const z = r3(start + (k * 0.6) / STEPS);
+        out.push(rect(C.x + pad, y + 46, (fill * k) / STEPS, 18, o.chosen ? "0x53e3a6" : "0x7d8796", k < STEPS ? `between(t,${a},${z})` : `gte(t,${a})`));
+      }
+    });
+    out.push(text(textFile(`clip${i}-brain-f.txt`, b.footer), { size: 32, x: C.x + pad, y: C.y + C.h - 58, color: "0xffd84a", border: 0 }));
+    return out;
+  };
 
   const inputs: string[] = [];
   const graph: string[] = [];
@@ -145,18 +186,20 @@ export function renderArgs(plan: VideoPlan): { args: string[]; files: TextFile[]
     }
     const punch = r3(c.punchSec);
     const { game: g, gameOut: go, panel: p, panelOut: po } = L;
+    // The extension's own panel, only for a clip that has no decision card.
+    const rawPanel = source.panel && !c.brain;
     // Frames: normalized time and rate, cut to length.
-    graph.push(`[${i}:v]setpts=(PTS-STARTPTS)/${c.speed},fps=${OUT.fps},trim=duration=${dur},setpts=PTS-STARTPTS,format=yuv420p,split=${source.panel ? 3 : 2}[s${i}a][s${i}b]${source.panel ? `[s${i}c]` : ""}`);
+    graph.push(`[${i}:v]setpts=(PTS-STARTPTS)/${c.speed},fps=${OUT.fps},trim=duration=${dur},setpts=PTS-STARTPTS,format=yuv420p,split=${rawPanel ? 3 : 2}[s${i}a][s${i}b]${rawPanel ? `[s${i}c]` : ""}`);
     // Backdrop: the game, blurred at low resolution (cheap) and darkened.
     graph.push(`[s${i}a]crop=${g.w}:${g.h}:${g.x}:${g.y},scale=-2:480,crop=270:480,boxblur=12:2,scale=${OUT.width}:${OUT.height},eq=brightness=-0.22:saturation=1.4[bg${i}]`);
-    // The game, and a 1.18x punch-in that takes over on the payoff.
+    // The game, and a gentle punch-in that takes over on the payoff.
     graph.push(`[s${i}b]crop=${g.w}:${g.h}:${g.x}:${g.y},split[f${i}a][f${i}b]`);
     graph.push(`[f${i}a]scale=${OUT.width}:${go.h}[g${i}a]`);
-    graph.push(`[f${i}b]crop=iw/1.18:ih/1.18,scale=${OUT.width}:${go.h}[g${i}b]`);
+    graph.push(`[f${i}b]crop=iw/${PUNCH_ZOOM}:ih/${PUNCH_ZOOM},scale=${OUT.width}:${go.h}[g${i}b]`);
     graph.push(`[bg${i}][g${i}a]overlay=0:${go.y}[o${i}a]`);
     graph.push(`[o${i}a][g${i}b]overlay=0:${go.y}:enable='gte(t,${punch})'[o${i}b]`);
     let last = `o${i}b`;
-    if (source.panel) {
+    if (rawPanel) {
       graph.push(`[s${i}c]crop=${p.w}:${p.h}:${p.x}:${p.y},scale=${po.w}:${po.h}[p${i}]`);
       graph.push(`[${last}][p${i}]overlay=(W-w)/2:${po.y}[o${i}c]`);
       last = `o${i}c`;
@@ -179,7 +222,8 @@ export function renderArgs(plan: VideoPlan): { args: string[]; files: TextFile[]
     if (c.stat) {
       draws.push(text(textFile(`clip${i}-stat.txt`, c.stat), { size: 44, y: L.caption.y + cap.lines.length * lineH + 12, color: "0xffd84a", border: 5, enable: `gte(t,${punch})` }));
     }
-    if (source.panel) draws.push(text(textFile(`clip${i}-label.txt`, "JEV'S BRAIN: LIVE AI DECISIONS"), { size: 34, y: L.labelY, color: "0x53e3a6", border: 4 }));
+    if (source.panel && c.brain) draws.push(...card(i, c.brain));
+    else if (rawPanel) draws.push(text(textFile(`clip${i}-label.txt`, "JEV'S BRAIN: LIVE AI DECISIONS"), { size: 34, y: L.labelY, color: "0x53e3a6", border: 4 }));
     // A white flash on every cut in.
     graph.push(`[${last}]${draws.join(",")},fade=t=in:st=0:d=0.22:color=white,setsar=1[v${i}]`);
 

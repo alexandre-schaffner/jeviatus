@@ -2,17 +2,16 @@
 // an old CRT television (officer's cap, gold epaulettes, a phosphor face that
 // blinks and emotes), bottom left over the game, with a comic speech bubble.
 // Drawn into the OpenFront page itself (the page is what's filmed) and
-// animated there: the driver only sends each line, its mood and the voice's
-// loudness envelope, and the page moves the mouth and types the subtitle in
-// step with it. It ignores the mouse, so it never takes a click.
+// animated there: the driver only sends each line and its mood, and the page
+// moves the mouth and types the subtitle. It ignores the mouse, so it never
+// takes a click.
 
-import type { Mood } from "./voice";
+export type Mood = "neutral" | "happy" | "angry" | "shocked" | "smug" | "sad";
+export const MOODS: readonly Mood[] = ["neutral", "happy", "angry", "shocked", "smug", "sad"];
 
 export interface Utterance {
   text: string;
   mood: Mood;
-  // Voice loudness per 40 ms, 0..1 (voice.ts envelope); empty without a voice.
-  env: number[];
   durMs: number;
   // The chat user being answered, shown above the line.
   replyTo?: string;
@@ -163,7 +162,7 @@ export function installExpression(name: string): string {
     const line = s.line;
     const t = line ? now - line.at : 0;
     const talking = line && t < line.durMs;
-    const amp = talking && line.env.length ? (line.env[Math.min(line.env.length - 1, Math.floor(t / 40))] || 0) : talking ? 0.5 + 0.5 * Math.sin(t / 70) : 0;
+    const amp = talking ? 0.5 + 0.5 * Math.sin(t / 70) : 0;
     if (line) {
       const n = Math.min(line.text.length, Math.ceil(line.text.length * Math.min(1, t / Math.max(1, line.durMs * 0.92))));
       if (shown.textContent.length !== n) { shown.textContent = line.text.slice(0, n); rest.textContent = line.text.slice(n); }

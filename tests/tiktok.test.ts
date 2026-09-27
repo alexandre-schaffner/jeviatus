@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { ffmpegArgs } from "../stream/encoder";
 import { listSegments, pruneSegments, segmentStart, segmentsCovering } from "../stream/recordings";
+import { brainCard } from "../tiktok/brain";
 import { findMoments, type Moment, parseTrace } from "../tiktok/moments";
 import { barSeconds, beatExpression, bpmFromName, chooseTrack } from "../tiktok/music";
 import { direct, fill, options, PHRASES, select, statLine } from "../tiktok/phrases";
@@ -49,6 +50,37 @@ describe("epic moments", () => {
     for (let tick = 150; tick <= 900; tick += 15) events.push(step(tick, { land_share: tick < 300 ? 0 : 0.001 * (tick / 100), land_rank: rank(tick) }, []) as never);
     const top = findMoments(parseTrace(events.map((e) => JSON.stringify(e)).join("\n"))).find((m) => m.kind === "top_rank");
     expect(top?.facts.from_rank).toBe(40);
+  });
+
+  test("no moments from a game where Jev's calls failed; no captions from missing facts", () => {
+    const failing = syntheticTrace().replace(/"latencyMs":300/g, '"latencyMs":300,"error":"Error: 402 Your organization has no available TypeSafe API credits"');
+    const g = parseTrace(failing);
+    expect(g.jevFailedShare).toBe(1);
+    expect(findMoments(g)).toEqual([]);
+    const tiny = parseTrace(syntheticTrace().replace('"peakLandShare":0.049,"attackers":[{"ref":"P3","name":"Tsar"}]', '"peakLandShare":0.004,"attackers":[]'));
+    const fall = findMoments(tiny).find((m) => m.kind === "last_stand")!;
+    expect(Object.values(options(fall)).some((p) => /Peaked|Outplayed/.test(p))).toBe(false);
+  });
+
+  test("each moment carries the call behind it: the order to attack, the surge's expansion, the launch", () => {
+    const [surge, conquest, nuke] = findMoments(game) as [Moment, Moment, Moment];
+    expect(conquest.brain).toMatchObject({ tick: 1005, route: "attack_player", target: "BigBob", detail: "30% troops, sized to finish them" });
+    expect(surge.brain?.route).toBe("expand");
+    expect(nuke.brain).toMatchObject({ route: "nuke", target: "Tsar" });
+    expect(conquest.brain!.options.map((o) => o.key)).toEqual(["attack_player", "expand", "hold"]);
+  });
+
+  test("the brain card says what Jev chose, what else it weighed, and how sure it was", () => {
+    const base = { tick: 1005, route: "attack_player", held: false, options: [{ key: "attack_player", p: 0.59 }, { key: "hold", p: 0.25 }, { key: "expand", p: 0.14 }, { key: "propose_alliance", p: 0.02 }], target: "Kalmykia", detail: "30% troops" };
+    expect(brainCard(base)).toEqual({
+      title: "ATTACK KALMYKIA",
+      options: [{ label: "Attack a player", p: 0.59, chosen: true }, { label: "Hold", p: 0.25, chosen: false }, { label: "Expand into free land", p: 0.14, chosen: false }],
+      footer: "59% SURE · SENDING 30% OF ITS TROOPS",
+    });
+    const held = brainCard({ ...base, held: true, holdReason: "confidence 0.28 < 0.35", options: [{ key: "attack_player", p: 0.4 }, { key: "expand", p: 0.3 }, { key: "build", p: 0.2 }, { key: "hold", p: 0.1 }] });
+    expect(held.title).toBe("HOLD");
+    expect(held.footer).toBe("TOO UNSURE TO ACT (28% < 35%)");
+    expect(held.options.at(-1)).toEqual({ label: "Hold", p: 0.1, chosen: true });
   });
 
   test("a truncated last line doesn't break parsing", () => {
@@ -155,10 +187,11 @@ describe("render", () => {
     const graph = args[args.indexOf("-filter_complex") + 1]!;
     expect(durationSec).toBe(16);
     expect(graph).toContain("concat=n=2:v=1:a=1");
-    expect(graph).toContain("overlay=0:430:enable='gte(t,6)'");
+    expect(graph).toContain("overlay=0:450:enable='gte(t,6)'");
     expect(graph).toContain("setpts=(PTS-STARTPTS)/4");
-    // The vote band (84 px at 720p) is cut off; the panel sits right.
-    expect(graph).toContain("crop=922:612:0:0");
+    // The whole game view, only the vote band cut off; without a card, the
+    // extension's own panel stands in for Jev's brain.
+    expect(graph).toContain("crop=1280:612:0:0");
     expect(graph).toContain("crop=340:366:928:52");
     // Sped-up clips play silence, not chipmunk audio.
     expect(graph).toContain("anullsrc=r=48000:cl=stereo,atrim=0:8");
@@ -168,6 +201,18 @@ describe("render", () => {
     expect(files.find((f) => f.path === "/work/clip1.ffconcat")?.content).toContain("file '/rec/b.mkv'");
     expect(files.filter((f) => /clip0-line\d/.test(f.path)).map((f) => f.content).join(" ")).toBe("THE AI CHOSE VIOLENCE");
     expect(args.at(-1)).toBe("/out/tiktok.mp4");
+  });
+
+  test("a clip with Jev's call gets the brain card instead of the cut-out panel", () => {
+    const brain = { title: "ATTACK KALMYKIA", options: [{ label: "Attack a player", p: 0.59, chosen: true }, { label: "Hold", p: 0.25, chosen: false }], footer: "59% SURE", clock: "2:10" };
+    const { args, files } = renderArgs(plan({ clips: [clip({ brain })] }));
+    const graph = args[args.indexOf("-filter_complex") + 1]!;
+    expect(graph).not.toContain("crop=340:366");
+    expect(files.find((f) => f.path.endsWith("clip0-brain-title.txt"))?.content).toBe("ATTACK KALMYKIA");
+    expect(files.find((f) => f.path.endsWith("clip0-brain-clock.txt"))?.content).toBe("DECIDED AT 2:10");
+    expect(files.find((f) => f.path.endsWith("clip0-brain-p0.txt"))?.content).toBe("59%");
+    // Each bar grows in ten steps to its share of the 888 px track.
+    expect(graph).toContain(`w=${Math.round(888 * 0.59)}:h=18:color=0x53e3a6:t=fill:enable='gte(t,0.84)'`);
   });
 
   test("a music file loops from its start point", () => {

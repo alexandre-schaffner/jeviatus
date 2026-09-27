@@ -5,7 +5,7 @@ import { parseStrategy, STRATEGY_LIMITS } from "../harness/strategy/doctrine";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { GitHubBallot, pick, rank, type BallotEntry } from "../stream/ballot";
+import { GitHubBallot, type LiveStrategy, rank, type BallotEntry } from "../stream/ballot";
 import { bandText, type BandState } from "../stream/band";
 import { formatTokens, parseBribe, parseMemo, type ParsedTransaction, prFromAmount, SolanaBribes } from "../stream/bribes";
 import { ingestUrl, loadBribeConfig, loadOutputs } from "../stream/config";
@@ -45,15 +45,29 @@ describe("strategy files", () => {
   });
 });
 
-// A fake GitHub: PR 1 is an approved strategy, 2 is approved but its author
-// pushed afterwards, 3 is a code PR, 4 edits two files, 5 is invalid JSON.
-function fakeGitHub(): typeof fetch {
+// A fake GitHub. Open PRs: 1 and 2 are strategy proposals, 3 is a code PR,
+// 4 edits two files, 5 is invalid JSON, 6 is valid but a maintainer labeled
+// it off the ballot. Merged: 10 (older strategy), 11 (newest merged overall,
+// a code change), 12 (a strategy the maintainer later deleted), 13 (the
+// newest merged strategy still on main, edited there after merging), 14 (not
+// merged, just closed).
+function fakeGitHub(o: { merged?: boolean } = {}): typeof fetch {
+  const pr = (number: number, title: string, login: string, extra: Record<string, unknown> = {}) => ({ number, title, draft: false, html_url: `u${number}`, user: { login }, head: { sha: `h${number}` }, ...extra });
   const pulls = [
-    { number: 1, title: "Turtle", draft: false, html_url: "u1", user: { login: "ann" }, head: { sha: "a1" } },
-    { number: 2, title: "Rush", draft: false, html_url: "u2", user: { login: "bob" }, head: { sha: "b2" } },
-    { number: 3, title: "Refactor", draft: false, html_url: "u3", user: { login: "cy" }, head: { sha: "c3" } },
-    { number: 4, title: "Two files", draft: false, html_url: "u4", user: { login: "di" }, head: { sha: "d4" } },
-    { number: 5, title: "Broken", draft: false, html_url: "u5", user: { login: "ed" }, head: { sha: "e5" } },
+    pr(1, "Turtle", "ann"),
+    pr(2, "Rush", "bob"),
+    pr(3, "Refactor", "cy"),
+    pr(4, "Two files", "di"),
+    pr(5, "Broken", "ed"),
+    pr(6, "Spam", "fe", { labels: [{ name: "Off-Ballot" }] }),
+  ];
+  // Listed by last update, not by merge time.
+  const closed = o.merged === false ? [] : [
+    pr(10, "Old strategy", "gus", { merged_at: "2026-09-01T00:00:00Z" }),
+    pr(13, "Out-build", "hal", { merged_at: "2026-09-20T00:00:00Z" }),
+    pr(11, "Code", "ivy", { merged_at: "2026-09-25T00:00:00Z" }),
+    pr(12, "Deleted later", "jo", { merged_at: "2026-09-22T00:00:00Z" }),
+    pr(14, "Rejected", "kim", { merged_at: null }),
   ];
   const files: Record<number, { filename: string; status: string }[]> = {
     1: [{ filename: "strategies/turtle.json", status: "added" }],
@@ -61,16 +75,21 @@ function fakeGitHub(): typeof fetch {
     3: [{ filename: "harness/agent.ts", status: "modified" }],
     4: [{ filename: "strategies/a.json", status: "added" }, { filename: "stream/main.ts", status: "modified" }],
     5: [{ filename: "strategies/broken.json", status: "added" }],
+    6: [{ filename: "strategies/spam.json", status: "added" }],
+    10: [{ filename: "strategies/old.json", status: "added" }],
+    11: [{ filename: "harness/agent.ts", status: "modified" }],
+    12: [{ filename: "strategies/gone.json", status: "added" }],
+    13: [{ filename: "strategies/out-build.json", status: "added" }],
+    14: [{ filename: "strategies/nope.json", status: "added" }],
   };
   const content: Record<string, string> = {
-    "strategies/turtle.json@a1": JSON.stringify({ name: "Turtle", doctrine: "Fortify." }),
-    "strategies/rush.json@b2": JSON.stringify({ name: "Rush", doctrine: "Attack." }),
-    "strategies/broken.json@e5": "{ nope",
-  };
-  const reviews: Record<number, unknown[]> = {
-    1: [{ state: "APPROVED", commit_id: "a1", author_association: "OWNER" }],
-    2: [{ state: "APPROVED", commit_id: "old", author_association: "OWNER" }],
-    5: [],
+    "strategies/turtle.json@h1": JSON.stringify({ name: "Turtle", doctrine: "Fortify." }),
+    "strategies/rush.json@h2": JSON.stringify({ name: "Rush", doctrine: "Attack." }),
+    "strategies/broken.json@h5": "{ nope",
+    "strategies/spam.json@h6": JSON.stringify({ name: "Spam", doctrine: "Spam." }),
+    "strategies/old.json@main": JSON.stringify({ name: "Old", doctrine: "Old." }),
+    "strategies/out-build.json@main": JSON.stringify({ name: "Out-build everyone", doctrine: "Edited on main." }),
+    "strategies/nope.json@main": JSON.stringify({ name: "Nope", doctrine: "Never merged." }),
   };
   const reactions: Record<number, unknown[]> = {
     1: [{ user: { login: "v1", type: "User" } }, { user: { login: "v2", type: "User" } }, { user: { login: "bot", type: "Bot" } }],
@@ -80,37 +99,45 @@ function fakeGitHub(): typeof fetch {
     const p = url.pathname.replace("/repos/o/r", "");
     const json = (v: unknown) => new Response(JSON.stringify(v));
     let m: RegExpExecArray | null;
-    if (p === "/pulls") return json(pulls);
+    if (p === "") return json({ default_branch: "main" });
+    if (p === "/pulls") return json(url.searchParams.get("state") === "closed" ? closed : pulls);
     if ((m = /^\/pulls\/(\d+)\/files$/.exec(p))) return json(files[Number(m[1])]);
-    if ((m = /^\/pulls\/(\d+)\/reviews$/.exec(p))) return json(reviews[Number(m[1])] ?? []);
     if ((m = /^\/issues\/(\d+)\/reactions$/.exec(p))) return json(reactions[Number(m[1])] ?? []);
-    if ((m = /^\/contents\/(.+)$/.exec(p))) return new Response(content[`${m[1]}@${url.searchParams.get("ref")}`] ?? "", { status: 200 });
-    return new Response("not found", { status: 404 });
+    const body = (m = /^\/contents\/(.+)$/.exec(p)) ? content[`${m[1]}@${url.searchParams.get("ref")}`] : undefined;
+    return body === undefined ? new Response("not found", { status: 404 }) : new Response(body);
   }) as typeof fetch;
 }
 
 describe("ballot", () => {
-  test("only approved, single-file, valid strategy PRs make the ballot; bots don't vote", async () => {
-    const ballot = await new GitHubBallot({ repo: "o/r", requireApproval: true, fetch: fakeGitHub() }).refresh();
-    expect(ballot.entries.map((e) => [e.number, e.votes, e.strategy.name])).toEqual([[1, 2, "Turtle"]]);
+  test("anyone's valid strategy PR is a proposal, unless a maintainer labeled it off; bots don't vote", async () => {
+    const ballot = await new GitHubBallot({ repo: "o/r", blockLabel: "off-ballot", fetch: fakeGitHub() }).refresh();
+    expect(ballot.entries.map((e) => [e.number, e.votes, e.strategy.name])).toEqual([[1, 2, "Turtle"], [2, 0, "Rush"]]);
     const reasons = Object.fromEntries(ballot.rejected.map((r) => [r.number, r.reason]));
-    expect(reasons[2]).toContain("approval");
     expect(reasons[4]).toContain("exactly one file");
     expect(reasons[5]).toContain("not valid JSON");
+    expect(reasons[6]).toContain("off-ballot");
     expect(reasons[3]).toBeUndefined();
+    const unlabeled = await new GitHubBallot({ repo: "o/r", fetch: fakeGitHub() }).refresh();
+    expect(unlabeled.entries.map((e) => e.number)).toEqual([1, 2, 6]);
   });
 
-  test("without the approval requirement, the pushed-after-approval PR is on it", async () => {
-    const ballot = await new GitHubBallot({ repo: "o/r", requireApproval: false, fetch: fakeGitHub() }).refresh();
-    expect(ballot.entries.map((e) => e.number)).toEqual([1, 2]);
+  test("what plays is the newest merged strategy still on main, as it reads there now", async () => {
+    const ballot = await new GitHubBallot({ repo: "o/r", fetch: fakeGitHub() }).refresh();
+    expect(ballot.live).toEqual({
+      number: 13,
+      title: "Out-build",
+      author: "hal",
+      url: "u13",
+      mergedAt: "2026-09-20T00:00:00Z",
+      file: "strategies/out-build.json",
+      strategy: { name: "Out-build everyone", doctrine: "Edited on main." },
+    });
+    expect((await new GitHubBallot({ repo: "o/r", fetch: fakeGitHub({ merged: false }) }).refresh()).live).toBeNull();
   });
 
-  test("ranking: most votes, then oldest; below the minimum plays Jev's own judgment", () => {
+  test("review queue: most votes, then oldest", () => {
     const e = (number: number, votes: number) => ({ number, votes, strategy: { name: `S${number}`, doctrine: "d" } }) as BallotEntry;
     expect(rank([e(5, 1), e(3, 4), e(2, 4)]).map((x) => x.number)).toEqual([2, 3, 5]);
-    expect(pick({ entries: [e(2, 0)], rejected: [], fetchedAt: 0 }, 1)).toBeNull();
-    expect(pick({ entries: [e(2, 1)], rejected: [], fetchedAt: 0 }, 1)?.number).toBe(2);
-    expect(pick(null, 0)).toBeNull();
   });
 });
 
@@ -146,14 +173,15 @@ describe("broadcast", () => {
     expect(ingestUrl("rtmps://other.example/live", "k")).toBe("rtmps://other.example/live/k");
   });
 
-  const idle: BandState = { repo: "o/r", playing: null, playingPot: null, ballot: null, bribe: null, status: "", clock: null, standing: null, games: 0, wins: 0, lastResult: null, lab: null };
+  const merged = (number: number, name: string, author = "ann"): LiveStrategy => ({ number, title: "t", author, url: "u", mergedAt: "2026-09-20T00:00:00Z", file: "strategies/x.json", strategy: { name, doctrine: "d" } });
+  const idle: BandState = { repo: "o/r", playing: null, ballot: null, bribe: null, status: "", clock: null, standing: null, games: 0, wins: 0, lastResult: null, lab: null };
 
-  test("band text names the repo, the strategy in play, the next on the ballot and the match", () => {
-    const entry = (number: number, votes: number, name: string) => ({ number, title: "t", author: "ann", url: "u", votes, strategy: { name, doctrine: "d" } });
-    const turtle = entry(7, 12, "Turtle");
-    const t = bandText({ ...idle, playing: turtle, ballot: { entries: [turtle, entry(3, 2, "Rush")], rejected: [], fetchedAt: 0 }, status: "UncleFred attacks Jev", clock: "9:12", standing: "#4 of 23", games: 3, wins: 1, lastResult: "eliminated at 9:12" });
+  test("band text names the repo, the merged strategy in play, the leading proposals and the match", () => {
+    const entry = (number: number, votes: number, name: string) => ({ number, title: "t", author: "bo", url: "u", votes, strategy: { name, doctrine: "d" } });
+    const turtle = merged(7, "Turtle");
+    const t = bandText({ ...idle, playing: turtle, ballot: { entries: [entry(3, 2, "Rush")], rejected: [], live: turtle, fetchedAt: 0 }, status: "UncleFred attacks Jev", clock: "9:12", standing: "#4 of 23", games: 3, wins: 1, lastResult: "eliminated at 9:12" });
     expect(t["vote.txt"]).toContain("github.com/o/r/pulls");
-    expect(t["strategy.txt"]).toBe('"Turtle"  ·  PR #7 by @ann, 12 votes      NEXT UP  #3 Rush (2)');
+    expect(t["strategy.txt"]).toBe('"Turtle"  ·  by @ann, PR #7      PROPOSED  #3 Rush (2)');
     expect(t["now.txt"]).toBe("UncleFred attacks Jev");
     expect(t["game.txt"]).toBe("GAME #4  ·  LIVE");
     expect(t["clock.txt"]).toBe("9:12");
@@ -173,11 +201,12 @@ describe("broadcast", () => {
     const design = bandDesign({ width: 1280, height: 720, bribes: false, lab: true });
     const slot = (file: string) => design.slots.find((s) => s.file === file)!;
     const long = "Everyone gangs up on the leader, then Jev backstabs them all one by one";
-    const t = bandText({ ...idle, playing: { number: 7, title: "t", author: "a-very-long-github-handle", url: "u", votes: 3, strategy: { name: long.slice(0, 40), doctrine: "d" } }, status: `${long} ${long}`, ballot: { entries: [{ number: 9, title: "t", author: "b", url: "u", votes: 1, strategy: { name: long.slice(0, 40), doctrine: "d" } }], rejected: [], fetchedAt: 0 } }, design);
+    const playing = merged(7, long.slice(0, 40), "a-very-long-github-handle");
+    const t = bandText({ ...idle, playing, status: `${long} ${long}`, ballot: { entries: [{ number: 9, title: "t", author: "b", url: "u", votes: 1, strategy: { name: long.slice(0, 40), doctrine: "d" } }], rejected: [], live: playing, fetchedAt: 0 } }, design);
     for (const f of ["now.txt", "strategy.txt"] as const) expect(textWidth(t[f]!, slot(f).font, slot(f).size)).toBeLessThanOrEqual(slot(f).maxWidth);
     expect(t["now.txt"]).toEndWith("…");
-    // The ballot's next entry doesn't fit whole, so it's left out rather than cut.
-    expect(t["strategy.txt"]).not.toContain("NEXT UP");
+    // The leading proposal doesn't fit whole, so it's left out rather than cut.
+    expect(t["strategy.txt"]).not.toContain("PROPOSED");
     expect(fit("short", "regular", 16, 500)).toBe("short");
   });
 
@@ -343,7 +372,7 @@ describe("bribes", () => {
     expect(formatTokens(2_000_000_000_000_000n, 6)).toBe("2B");
   });
 
-  test("counts each bribe once, across refreshes and restarts; a match spends its pot", async () => {
+  test("counts each bribe once, across refreshes and restarts", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "jev-bribes-"));
     const ledgerFile = path.join(dir, "bribes.json");
     const since = 1_000_000;
@@ -379,31 +408,28 @@ describe("bribes", () => {
     expect(again.pots().get(7)).toBe(6_000_000_000n);
     expect(await again.refresh()).toEqual([]);
 
-    expect(again.spend(7)).toBe(6_000_000_000n);
-    expect([...open().pots()]).toEqual([[9, 2_000_000_009n]]);
+    expect([...open().pots()]).toEqual([[7, 6_000_000_000n], [9, 2_000_000_009n]]);
     expect(JSON.parse(readFileSync(ledgerFile, "utf8"))).toMatchObject({ mint: MINT, wallet: WALLET, since });
   });
 
-  test("a big enough pot outranks any vote count, and plays even without votes", () => {
+  test("in the review queue, a big enough pot outranks any vote count", () => {
     const e = (number: number, votes: number) => ({ number, votes, strategy: { name: `S${number}`, doctrine: "d" } }) as BallotEntry;
-    const ballot = { entries: [e(1, 50), e(2, 0), e(3, 3)], rejected: [], fetchedAt: 0 };
+    const entries = [e(1, 50), e(2, 0), e(3, 3)];
     const pots = new Map([[2, 10n], [3, 500n]]);
-    expect(rank(ballot.entries, pots, 1n).map((x) => x.number)).toEqual([3, 2, 1]);
-    expect(rank(ballot.entries, pots, 100n).map((x) => x.number)).toEqual([3, 1, 2]);
-    expect(pick(ballot, 1, pots, 1000n)?.number).toBe(1);
-    expect(pick({ ...ballot, entries: [e(2, 0)] }, 5, pots, 1n)?.number).toBe(2);
-    expect(pick({ ...ballot, entries: [e(2, 0)] }, 5)).toBeNull();
+    expect(rank(entries, pots, 1n).map((x) => x.number)).toEqual([3, 2, 1]);
+    expect(rank(entries, pots, 100n).map((x) => x.number)).toEqual([3, 1, 2]);
+    expect(rank(entries, pots, 1000n).map((x) => x.number)).toEqual([1, 3, 2]);
   });
 
-  test("the band says how to bribe, who paid for this match, and thanks new bribes", () => {
+  test("the band says how to bribe, ranks proposals by pot, and thanks new bribes", () => {
     const entry = (number: number, votes: number, name: string) => ({ number, title: "t", author: "ann", url: "u", votes, strategy: { name, doctrine: "d" } });
     const turtle = entry(7, 2, "Turtle");
     const rush = entry(9, 40, "Rush");
+    const live: LiveStrategy = { number: 3, title: "t", author: "hal", url: "u", mergedAt: "2026-09-20T00:00:00Z", file: "strategies/o.json", strategy: { name: "Out-build", doctrine: "d" } };
     const state: BandState = {
       repo: "o/r",
-      playing: turtle,
-      playingPot: 50_000_000_000n,
-      ballot: { entries: [rush, turtle], rejected: [], fetchedAt: 0 },
+      playing: live,
+      ballot: { entries: [rush, turtle], rejected: [], live, fetchedAt: 0 },
       bribe: { wallet: WALLET, ticker: "JEV", decimals: 6, pots: new Map([[7, 1_200_000_000n]]), minPot: 1_000_000n, thanks: null },
       status: "LIVE",
       clock: null,
@@ -414,10 +440,11 @@ describe("bribes", () => {
       lab: null,
     };
     const t = bandText(state);
-    expect(t["strategy.txt"]).toContain('"Turtle"  ·  PR #7 by @ann, bribed 50K $JEV');
-    expect(t["strategy.txt"]).toContain("NEXT UP  #9 Rush (40)");
+    expect(t["strategy.txt"]).toContain('"Out-build"  ·  by @hal, PR #3');
+    expect(t["strategy.txt"]).toContain("PROPOSED  #7 Turtle (2, 1.2K $JEV)");
+    expect(t["vote.txt"]).toContain("thumbs-up or bribe it into review");
     expect(t["bribe.txt"]).toContain(`send $JEV to ${WALLET}`);
-    expect(t["bribe.txt"]).toContain("memo #12 or amount ending .000012 backs PR #12");
+    expect(t["bribe.txt"]).toContain("memo #12 or amount ending .000012 promotes PR #12");
     expect(bandText({ ...state, bribe: { ...state.bribe!, thanks: "NEW BRIBE" } })["bribe.txt"]).toBe("NEW BRIBE");
   });
 

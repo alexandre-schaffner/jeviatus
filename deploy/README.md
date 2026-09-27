@@ -15,7 +15,7 @@ The container needs about 4 vCPU and 8 GB of RAM. Chromium renders WebGL on the 
 
 Hetzner prices are from its [15 June 2026 price adjustment](https://docs.hetzner.com/general/infrastructure-and-availability/price-adjustment/). Fly's are from [its pricing page](https://fly.io/docs/about/pricing/) and its calculator; check them before you order. Pick an EU location (Nuremberg `nbg1`, Falkenstein `fsn1`, Helsinki `hel1`), because only the EU locations include 20 TB of traffic. In the US, traffic is 1 to 8 TB. You can resize a Hetzner server later from its console (Rescale, "CPU and RAM only" keeps the disk and IP), so starting with a CX43 costs nothing if it turns out too small.
 
-The server itself is the only new infrastructure cost. The stream's other costs don't change: TypeSafe, and the commentator at about $4/day (Claude Haiku) plus $8/day (OpenAI TTS). The lab's cost is [covered below](#claude-code-for-the-lab).
+The server itself is the only new infrastructure cost. The stream's other costs don't change: TypeSafe, and the commentator at about $4/day (Claude Haiku). The lab's cost is [covered below](#claude-code-for-the-lab).
 
 ## Morning steps
 

@@ -140,7 +140,7 @@ export function questions(opts: Record<string, string>): Questions {
 function momentState(m: Moment, ctx: { map: string | null; strategy: string | null }): Record<string, unknown> {
   return {
     moment: { kind: m.kind.replace("_", " "), what_happened: m.what, facts: m.facts, minute: Math.round(m.tick / 60) / 10 },
-    game: { map: ctx.map ?? "unknown", jev_strategy_voted_by_viewers: ctx.strategy ?? "none, Jev's own judgment" },
+    game: { map: ctx.map ?? "unknown", jev_strategy_from_a_viewer: ctx.strategy ?? "none, Jev's own judgment" },
   };
 }
 

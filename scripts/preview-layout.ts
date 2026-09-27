@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { installExpression, sayExpression } from "../stream/avatar";
-import type { BallotEntry } from "../stream/ballot";
+import type { BallotEntry, LiveStrategy } from "../stream/ballot";
 import { Band, type BandState } from "../stream/band";
 import { Cdp } from "../stream/cdp";
 import { bandDesign, bandLines, screenSize } from "../stream/bandLayout";
@@ -125,7 +125,7 @@ async function shoot(cdp: Cdp, url: string, size: { width: number; height: numbe
   await Bun.sleep(2500);
   await cdp.evaluate(targetId, installExpression("General Static"));
   if (line) {
-    await cdp.evaluate(targetId, sayExpression({ text: line, mood: "smug", env: [], durMs: 600 }));
+    await cdp.evaluate(targetId, sayExpression({ text: line, mood: "smug", durMs: 600 }));
     await Bun.sleep(1200);
   }
   const { data } = await cdp.send<{ data: string }>("Page.captureScreenshot", { format: "png" }, session);
@@ -144,11 +144,11 @@ const entry = (number: number, name: string, author: string, votes: number): Bal
   strategy: { name, doctrine: "" },
 });
 const ballot = [entry(14, "Turtle up, then nuke the leader", "ann", 9), entry(11, "Befriend everyone, betray late", "bo", 4), entry(9, "Rush the nearest bot", "cy", 2)];
+const live: LiveStrategy = { ...entry(7, "Out-build everyone", "dee", 0), mergedAt: "2026-09-26T12:00:00Z", file: "strategies/out-build.json" };
 const base: BandState = {
   repo: "alexandre-schaffner/jeviatus",
-  playing: ballot[0]!,
-  playingPot: null,
-  ballot: { entries: ballot, rejected: [], fetchedAt: 0 },
+  playing: live,
+  ballot: { entries: ballot, rejected: [], live, fetchedAt: 0 },
   bribe: null,
   status: "UncleFred attacks Jev",
   clock: "14:32",
@@ -176,7 +176,6 @@ const SCENES: Record<string, Scene> = {
   bribe: {
     band: {
       ...base,
-      playingPot: 25_000_000_000n,
       bribe: { wallet: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU", ticker: "JEV", decimals: 6, pots: new Map([[11, 4_000_000_000n]]), minPot: 1_000_000n, thanks: null },
     },
     page: "game",
@@ -239,7 +238,7 @@ try {
     const dir = path.join(work, `band-${name}`);
     new Band(dir, bandDesign({ width: W, height: H, bribes, lab: true })).write(scene.band);
     const args = ffmpegArgs(
-      { outputs: [{ name: "file", url: "/dev/null" }], width: W, height: H, fps: 30, videoKbps: 4500, audio: false, display: ":0", source: "pipe", voice: false },
+      { outputs: [{ name: "file", url: "/dev/null" }], width: W, height: H, fps: 30, videoKbps: 4500, audio: false, display: ":0", source: "pipe", mix: false },
       { dir, bribes, lab: true },
     );
     const graph = args[args.indexOf("-filter_complex") + 1]!;

@@ -11,13 +11,16 @@ interface P {
   troops_vs_mine?: number;
 }
 
-export function step(tick: number, me: { land_share: number; land_rank: number; attacking?: string[] }, players: P[], record?: { action: string; target?: string }, sent: string[] = []) {
+export function step(tick: number, me: { land_share: number; land_rank: number; attacking?: string[] }, players: P[], record?: { action: string; target?: string; detail?: string }, sent: string[] = []) {
+  const route = record?.action ?? "hold";
+  // Jev's route answer: the chosen route most likely, then the rest.
+  const probabilities: Record<string, number> = { [route]: 0.7, ...Object.fromEntries(["expand", "hold", "attack_player"].filter((k) => k !== route).map((k, i) => [k, i === 0 ? 0.2 : 0.05])) };
   return {
     type: "step",
     agent: "jev",
     tick,
-    decision: { route: record?.action ?? "hold", held: false, confidence: 0.8, used: {}, record },
-    calls: [{ label: "route", state: { game: { tick, players_alive: 30 }, me: { alive: true, attacking: [], ...me }, players }, latencyMs: 300 }],
+    decision: { route, held: false, confidence: 0.8, used: {}, record },
+    calls: [{ label: "route", state: { game: { tick, players_alive: 30 }, me: { alive: true, attacking: [], ...me }, players }, answers: { route: { type: "choice", choice: route, confidence: 0.7, probabilities } }, latencyMs: 300 }],
     intents: sent.map((desc) => ({ desc, sent: true })),
   };
 }
@@ -37,8 +40,10 @@ export function syntheticTrace(): string {
     ];
     const attacking = tick >= 1000 && tick < 1200 ? ["P2"] : [];
     const nuke = tick === 1290;
+    // The order that starts BigBob's collapse, and the expansion of the surge.
+    const order = tick === 1005 ? { action: "attack_player", target: "P2", detail: "30% troops, sized to finish them" } : tick > 300 && tick < 900 ? { action: "expand", detail: "20% troops" } : undefined;
     events.push(
-      step(tick, { land_share: land, land_rank: tick < 900 ? 9 : 2, attacking }, players, nuke ? { action: "nuke", target: "P3" } : undefined, nuke ? ["nuke AtomBomb abc@123"] : []),
+      step(tick, { land_share: land, land_rank: tick < 900 ? 9 : 2, attacking }, players, nuke ? { action: "nuke", target: "P3" } : order, nuke ? ["nuke AtomBomb abc@123"] : order ? ["x"] : []),
     );
   }
   events.push({ type: "death", agent: "jev", tick: 1600, minutes: 2.7, landShareBefore: 0.03, peakLandShare: 0.049, attackers: [{ ref: "P3", name: "Tsar" }] });

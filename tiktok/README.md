@@ -58,8 +58,13 @@ Jev only chooses; it never writes text. Everything burned into a public video co
 ## What the video looks like
 
 - **Top:** the hook ("AN AI IS PLAYING OPENFRONT VS REAL PEOPLE") on the first clip, then each moment's catchphrase. It pops in on the payoff with a yellow stat line under it.
-- **Middle:** the game, with the vote band cropped off (4 lines tall when the stream has bribes on: `BRIBE_MINT` is set, or pass `--band-lines`). It punches in 1.18x on the payoff.
-- **Bottom:** "Jev's brain", the extension's live decision panel, enlarged.
+- **Middle:** the whole game view, uncropped: only the vote band is cut off (4 lines tall when the stream has bribes on: `BRIBE_MINT` is set, or pass `--band-lines`). It punches in 1.12x on the payoff.
+- **Bottom: "Jev's brain",** a card with the call behind the moment, from the trace ([brain.ts](brain.ts)):
+  - what Jev decided, big (e.g. "ATTACK KALMYKIA");
+  - its top three options with their probabilities, as bars that grow in one after another, the chosen one in green;
+  - how sure it was and what it committed ("59% SURE · SENDING 30% OF ITS TROOPS"), or why it held.
+
+  The decision is the moment's key step (`keyDecision` in [moments.ts](moments.ts)): the order to attack the player who fell, the launch, the betrayal, the most confident expansion of a surge, or Jev's last call before it died. A clip without one shows the extension's own panel instead.
 - A white flash on every cut. "VOTE JEV'S NEXT STRATEGY / LINK IN BIO" plays over the last 2.5 s.
 
 The backdrop is the game, blurred.

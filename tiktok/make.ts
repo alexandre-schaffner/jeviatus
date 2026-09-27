@@ -8,6 +8,7 @@ import path from "node:path";
 import { listSegments, type Segment, segmentStart, segmentsCovering } from "../stream/recordings";
 import { type GameTrace, TICKS_PER_SEC } from "./moments";
 import { barSeconds } from "./music";
+import { brainCard } from "./brain";
 import { HOOK, type Pick, statLine } from "./phrases";
 import type { Clip } from "./render";
 
@@ -195,6 +196,7 @@ export function planClip(pick: Pick, i: number, bpm: number, locate: Locate, opt
     teaser: i === 0 ? (opts.hook ?? HOOK) : speed > 1 ? `${speed}X SPEED` : `MINUTE ${gameClock(m.tick)}`,
     phrase: pick.phrase,
     stat: statLine(m),
+    ...(m.brain ? { brain: { ...brainCard(m.brain), clock: gameClock(m.brain.tick) } } : {}),
   };
 }
 
@@ -203,7 +205,7 @@ export function caption(g: GameTrace, picks: Pick[]): string {
   return [
     `${best.phrase} 🤖`,
     "",
-    `Jev is an AI playing OpenFront against real people, live 24/7.${g.map ? ` Map: ${g.map}.` : ""}${g.strategy ? ` Strategy voted by viewers: "${g.strategy}".` : ""}`,
+    `Jev is an AI playing OpenFront against real people, live 24/7.${g.map ? ` Map: ${g.map}.` : ""}${g.strategy ? ` Strategy by a viewer: "${g.strategy}".` : ""}`,
     "",
     "#openfront #ai #gaming #strategygames #aigaming #jev",
   ].join("\n");

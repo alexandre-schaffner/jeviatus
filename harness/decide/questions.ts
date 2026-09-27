@@ -94,9 +94,9 @@ export interface AllianceContext {
   facts: (o: PlayerObs) => Record<string, unknown>;
 }
 
-// With a viewer-voted strategy in the state (`strategy`), route and goal lean on its doctrine.
+// With a viewer-proposed strategy in the state (`strategy`), route and goal lean on its doctrine.
 const DOCTRINE =
-  "`strategy.doctrine` is the playstyle the stream's viewers voted for: follow its spirit whenever doing so does not clearly risk losing";
+  "`strategy.doctrine` is the playstyle a viewer proposed and the stream's creator picked: follow its spirit whenever doing so does not clearly risk losing";
 
 export function routeQuestions(c: Candidates, unclaimed: number, troops: string, ally?: AllianceContext, doctrine = false): Questions {
   const q: Questions = {

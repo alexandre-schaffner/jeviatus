@@ -8,7 +8,6 @@ export interface StreamOutput {
   url: string;
 }
 
-import type { TtsConfig } from "./voice";
 
 // Viewers bribe Jev with the stream's pump.fun coin (stream/bribes.ts). Only
 // public addresses: the stream never holds a key that can move funds.
@@ -52,8 +51,7 @@ export interface StreamConfig {
   ballot: {
     repo: string;
     token: string | undefined;
-    requireApproval: boolean;
-    minVotes: number;
+    blockLabel: string;
     refreshSeconds: number;
   };
   // Give up on a lobby that hasn't started after this long.
@@ -79,9 +77,10 @@ export interface StreamConfig {
   // The on-screen commentator (stream/character.ts), or null when COMMENTATOR=false.
   character: {
     name: string;
-    // Claude writes the lines (and answers chat); without a key, canned lines.
+    // Who writes his lines (and answers chat): the Claude Code CLI with your
+    // own login, the Anthropic API with a key, or neither (canned lines).
     claude: { apiKey: string; model: string } | null;
-    tts: TtsConfig;
+    claudeCode: { model: string } | null;
     // Whose Kick chat to read and answer; null: no chat.
     kickChannel: string | null;
     idleSeconds: number;
@@ -169,25 +168,16 @@ export function loadBribeConfig(data = "/data"): BribeConfig | null {
   };
 }
 
-// The voice: COMMENTATOR_VOICE picks the provider; by default the first one
-// with a key, else macOS's own `say` on a Mac, else subtitles only.
-export function loadTts(mac: boolean): TtsConfig {
-  const eleven = process.env.ELEVENLABS_API_KEY?.trim();
-  const openai = process.env.OPENAI_API_KEY?.trim();
-  const choice = str("COMMENTATOR_VOICE", eleven ? "elevenlabs" : openai ? "openai" : mac ? "say" : "none");
-  switch (choice) {
-    case "elevenlabs":
-      // "Clyde": a gravelly war-veteran voice from ElevenLabs' default library.
-      return { provider: "elevenlabs", apiKey: str("ELEVENLABS_API_KEY"), voiceId: str("ELEVENLABS_VOICE_ID", "2EiwWnXFnvU5JabPnv8n"), model: str("ELEVENLABS_MODEL", "eleven_flash_v2_5") };
-    case "openai":
-      return { provider: "openai", apiKey: str("OPENAI_API_KEY"), voice: str("OPENAI_VOICE", "onyx"), model: str("OPENAI_TTS_MODEL", "gpt-4o-mini-tts") };
-    case "say":
-      return { provider: "say", voice: str("SAY_VOICE", "Rocko (English (US))") };
-    case "none":
-      return { provider: "none" };
-    default:
-      throw new Error(`COMMENTATOR_VOICE must be elevenlabs, openai, say or none, got ${choice}`);
-  }
+// COMMENTATOR_LLM: claude-code (the default when the `claude` CLI is
+// installed: your own Claude Code login, no key), api (ANTHROPIC_API_KEY), or
+// canned.
+function commentatorLlm(): { claude: { apiKey: string; model: string } | null; claudeCode: { model: string } | null } {
+  const key = process.env.ANTHROPIC_API_KEY?.trim();
+  const choice = str("COMMENTATOR_LLM", Bun.which("claude") ? "claude-code" : key ? "api" : "canned");
+  if (choice === "claude-code") return { claude: null, claudeCode: { model: str("COMMENTATOR_MODEL", "haiku") } };
+  if (choice === "api") return { claude: { apiKey: str("ANTHROPIC_API_KEY"), model: str("COMMENTATOR_MODEL", "claude-haiku-4-5-20251001") }, claudeCode: null };
+  if (choice === "canned") return { claude: null, claudeCode: null };
+  throw new Error(`COMMENTATOR_LLM must be claude-code, api or canned, got ${choice}`);
 }
 
 // Where the profile, traces, recordings and bribe ledger live: the volume in
@@ -222,8 +212,7 @@ export function loadStreamConfig(): StreamConfig {
     ballot: {
       repo: str("BALLOT_REPO", "alexandre-schaffner/jeviatus"),
       token: process.env.GITHUB_TOKEN?.trim() || undefined,
-      requireApproval: bool("BALLOT_REQUIRE_APPROVAL", true),
-      minVotes: num("BALLOT_MIN_VOTES", 1),
+      blockLabel: str("BALLOT_BLOCK_LABEL", "off-ballot"),
       refreshSeconds: num("BALLOT_REFRESH_SECONDS", process.env.GITHUB_TOKEN ? 60 : 300),
     },
     lobbyTimeoutSeconds: num("LOBBY_TIMEOUT_SECONDS", 240),
@@ -243,8 +232,7 @@ export function loadStreamConfig(): StreamConfig {
     character: bool("COMMENTATOR", true)
       ? {
           name: str("COMMENTATOR_NAME", "General Static"),
-          claude: process.env.ANTHROPIC_API_KEY?.trim() ? { apiKey: str("ANTHROPIC_API_KEY"), model: str("COMMENTATOR_MODEL", "claude-haiku-4-5-20251001") } : null,
-          tts: loadTts(mac),
+          ...commentatorLlm(),
           kickChannel: process.env.KICK_CHANNEL?.trim().replace(/^https?:\/\/(www\.)?kick\.com\//i, "").replace(/\/.*$/, "") || null,
           idleSeconds: num("COMMENTATOR_IDLE_SECONDS", 35),
           chatGapSeconds: num("COMMENTATOR_CHAT_GAP_SECONDS", 12),

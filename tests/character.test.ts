@@ -4,7 +4,7 @@ import type { Scene, SceneEvent } from "../stream/camera";
 import { CannedWriter, Commentator, type Line, prompt, type Turn, unsafe, type Writer } from "../stream/commentator";
 import { ffmpegArgs } from "../stream/encoder";
 import { cleanChat } from "../stream/kickchat";
-import { durationMs, envelope, type MusicSource, OUT_RATE, VoicePump, wavData } from "../stream/voice";
+import { AudioPump, type MusicSource, OUT_RATE } from "../stream/audio";
 import { Playlist, shuffle } from "../stream/music";
 import { render, TRACKS, wav } from "../stream/lofi";
 import { claudeEnv, describeEvent, scrubbedEnv, secretValues } from "../stream/lab";
@@ -150,59 +150,30 @@ describe("commentator", () => {
   });
 });
 
-describe("voice", () => {
-  const pcm = (samples: number[]) => new Uint8Array(new Int16Array(samples).buffer);
-
-  test("pump: silence between lines, speech in order, 48 kHz stereo", async () => {
+describe("audio", () => {
+  test("pump: silence without music, 48 kHz stereo", () => {
     const out: Uint8Array[] = [];
-    const pump = new VoicePump((b) => void out.push(b));
+    const pump = new AudioPump((b) => void out.push(b));
     // 1/30 s at 48 kHz is 1600 stereo frames, 4 bytes each.
     pump.pull(1 / 30);
     expect(out[0]!.length).toBe(6400);
     expect(out[0]!.every((b) => b === 0)).toBe(true);
-    // 1000 samples at 24 kHz become 2000 frames at 48 kHz.
-    const done = pump.play(pcm(Array.from({ length: 1000 }, () => 16384)));
-    expect(pump.speaking).toBe(true);
-    pump.pull(1 / 30);
-    pump.pull(1 / 30);
-    await done;
-    expect(pump.speaking).toBe(false);
-    const all = new Int16Array(Buffer.concat(out.slice(1)).buffer.slice(0));
-    expect(all.slice(0, 4000).every((s) => Math.abs(s - 16384) <= 1)).toBe(true);
-    expect(all.slice(4000).every((s) => s === 0)).toBe(true);
   });
 
   test("pump: fractional frames add up", () => {
     let bytes = 0;
-    const pump = new VoicePump((b) => void (bytes += b.length));
+    const pump = new AudioPump((b) => void (bytes += b.length));
     // 2997 frames at 29.97 fps: exactly 100 s.
     for (let i = 0; i < 2997; i++) pump.pull(1 / 29.97);
     expect(Math.abs(bytes / 4 - OUT_RATE * 100)).toBeLessThan(2);
   });
 
-  test("pump: music plays under silence and ducks under the voice", async () => {
+  test("pump: music at its level", () => {
     const music: MusicSource = { read: (o, n) => (o.fill(0.5, 0, n * 2), true) };
     const out: Int16Array[] = [];
-    const pump = new VoicePump((b) => void out.push(new Int16Array(b.buffer.slice(0))), { music, musicGain: 0.4, duckGain: 0.1 });
+    const pump = new AudioPump((b) => void out.push(new Int16Array(b.buffer.slice(0))), music, 0.4);
     pump.pull(1);
-    const level = (a: Int16Array) => a[a.length - 2]! / 32767;
-    expect(level(out[0]!)).toBeCloseTo(0.2, 2);
-    void pump.play(pcm(Array.from({ length: 48_000 }, () => 0)));
-    pump.pull(1);
-    expect(level(out[1]!)).toBeCloseTo(0.05, 2);
-  });
-
-  test("envelope and duration", () => {
-    const loud = Array.from({ length: 960 }, () => 8000);
-    const quiet = Array.from({ length: 960 }, () => 800);
-    expect(envelope(pcm([...loud, ...quiet]))).toEqual([1, 0.1]);
-    expect(durationMs(pcm(loud))).toBe(40);
-  });
-
-  test("WAV data chunk, past other chunks", () => {
-    const header = (tag: string, size: number) => [...tag].map((c) => c.charCodeAt(0)).concat([size & 255, (size >> 8) & 255, 0, 0]);
-    const wav = new Uint8Array([...header("RIFF", 0).slice(0, 4), 0, 0, 0, 0, ..."WAVE".split("").map((c) => c.charCodeAt(0)), ...header("fmt ", 2), 1, 1, ...header("FLLR", 3), 9, 9, 9, 0, ...header("data", 4), 1, 2, 3, 4]);
-    expect([...wavData(wav)]).toEqual([1, 2, 3, 4]);
+    expect(out[0]![out[0]!.length - 2]! / 32767).toBeCloseTo(0.2, 2);
   });
 });
 
@@ -211,7 +182,7 @@ describe("avatar", () => {
     expect(plate("General Static")).toBe("GEN. STATIC");
     expect(installExpression("General Static")).toContain("jev-commentator");
     // The line goes in as JSON: quotes and markup can't break out.
-    const e = sayExpression({ text: `"); alert(1); ("<b>`, mood: "happy", env: [], durMs: 1000 });
+    const e = sayExpression({ text: `"); alert(1); ("<b>`, mood: "happy", durMs: 1000 });
     expect(e).toContain(JSON.stringify(`"); alert(1); ("<b>`));
   });
 });
@@ -222,12 +193,12 @@ describe("kick chat", () => {
   });
 });
 
-describe("encoder with the voice", () => {
+describe("encoder with the mix", () => {
   const band = { dir: "/b", bribes: false, lab: true };
   const base = { outputs: [{ name: "file" as const, url: "/x.mkv" }], width: 1280, height: 720, fps: 30, videoKbps: 4500, display: ":99" };
 
-  test("Mac path: the voice is the only audio", () => {
-    const args = ffmpegArgs({ ...base, audio: false, source: "pipe", voice: true }, band);
+  test("Mac path: the mix is the only audio", () => {
+    const args = ffmpegArgs({ ...base, audio: false, source: "pipe", mix: true }, band);
     expect(args).toContain("pipe:3");
     expect(args).not.toContain("anullsrc=channel_layout=stereo:sample_rate=48000");
     expect(args[args.indexOf("-filter_complex") + 1]).toEndWith(";[1:a]aformat=sample_rates=48000:channel_layouts=stereo[a]");
@@ -235,14 +206,14 @@ describe("encoder with the voice", () => {
   });
 
   test("container: the game's sound under the mix", () => {
-    const args = ffmpegArgs({ ...base, audio: true, source: "x11", voice: true }, band);
+    const args = ffmpegArgs({ ...base, audio: true, source: "x11", mix: true }, band);
     const graph = args[args.indexOf("-filter_complex") + 1]!;
     expect(graph).toContain("[2:a]");
     expect(graph).toContain("volume=0.7");
     expect(graph).toEndWith("amix=inputs=2:normalize=0[a]");
   });
 
-  test("no voice: unchanged", () => {
+  test("no mix: unchanged", () => {
     const args = ffmpegArgs({ ...base, audio: false, source: "pipe" }, band);
     expect(args).not.toContain("pipe:3");
     expect(args[args.indexOf("[v]") + 2]).toBe("1:a");

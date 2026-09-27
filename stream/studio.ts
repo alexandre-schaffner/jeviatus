@@ -22,7 +22,7 @@ export interface StudioState {
   comparison: string[][] | null;
 }
 
-export const STEPS = ["Analyze Jev's games", "Judge the last change", "Write one change", "Typecheck and test", "Build and ship"] as const;
+export const STEPS = ["Analyze Jev's games", "Judge the last change", "Write one change", "Test and check sources", "Build and ship"] as const;
 
 const MAX_LINES = 600;
 

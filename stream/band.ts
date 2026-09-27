@@ -1,13 +1,13 @@
 // The strip under the game (laid out in stream/bandLayout.ts): what's
-// happening, the strategy in play and how to vote for the next one, how to
-// bribe Jev (when bribes are on), and on the right the match clock, Jev's
+// happening, the strategy in play (the newest merged) and the proposals
+// leading the review queue, how to propose and promote one (bribes, when on), and on the right the match clock, Jev's
 // standing, the stream's record and what the lab is testing. ffmpeg draws it
 // (drawtext re-reads these files every frame), so it stays up while the
 // browser restarts or navigates, and OpenFront's own page is never touched.
 
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { type Ballot, type BallotEntry, potOf, type Pots, rank } from "./ballot";
+import { type Ballot, type LiveStrategy, potOf, type Pots, rank } from "./ballot";
 import { type BandDesign, bandDesign, type BandFile, fit, textWidth } from "./bandLayout";
 import { formatTokens, tailDigits } from "./bribes";
 
@@ -37,9 +37,8 @@ export interface LabBand {
 
 export interface BandState {
   repo: string;
-  playing: BallotEntry | null;
-  // The pot that bought the match in play (it's spent by now).
-  playingPot: bigint | null;
+  // The newest merged strategy, in play.
+  playing: LiveStrategy | null;
   ballot: Ballot | null;
   bribe: BribeBand | null;
   // What's happening: the camera's subject in a match, else what the driver does.
@@ -75,23 +74,21 @@ function labText(lab: LabBand | null, games: number): string[] {
 export function bandText(s: BandState, design: BandDesign = bandDesign({ width: 1280, height: 720, bribes: s.bribe !== null, lab: true })): Partial<Record<BandFile, string>> {
   const b = s.bribe;
   const tokens = (raw: bigint) => `${formatTokens(raw, b?.decimals ?? 0)} $${b?.ticker ?? ""}`;
-  const why = (e: BallotEntry) => (s.playingPot && e === s.playing ? `bribed ${tokens(s.playingPot)}` : plural(e.votes, "vote"));
-  // The ballot's leaders after the one in play (the next match plays the first).
+  // The review queue's leaders: open proposals, by bribes then 👍.
   const others = rank(s.ballot?.entries ?? [], b?.pots, b?.minPot)
-    .filter((e) => e.number !== s.playing?.number)
     .slice(0, 2)
     .map((e) => {
       const pot = b ? potOf(e, b.pots, b.minPot) : 0n;
       return `#${e.number} ${e.strategy.name} (${e.votes}${pot > 0n ? `, ${tokens(pot)}` : ""})`;
     });
-  const playing = s.playing ? `"${s.playing.strategy.name}"  ·  PR #${s.playing.number} by @${s.playing.author}, ${why(s.playing)}` : "Jev's own judgment (no strategy has votes yet)";
+  const playing = s.playing ? `"${s.playing.strategy.name}"  ·  by @${s.playing.author}, PR #${s.playing.number}` : "Jev's own judgment (no strategy merged yet)";
   const next = s.games + 1;
   // Each file is its parts: the first always shows, each next one only if it
   // fits whole, so the band drops details instead of cutting words.
   const parts: Partial<Record<BandFile, string[]>> = {
     "now.txt": [s.status],
-    "strategy.txt": [playing, ...others.map((o, i) => (i === 0 ? `      NEXT UP  ${o}` : `  ·  ${o}`))],
-    "vote.txt": [`github.com/${s.repo}/pulls`, "  ·  thumbs-up a PR: the top one plays next"],
+    "strategy.txt": [playing, ...others.map((o, i) => (i === 0 ? `      PROPOSED  ${o}` : `  ·  ${o}`))],
+    "vote.txt": [`github.com/${s.repo}/pulls`, b ? "  ·  propose a PR; thumbs-up or bribe it into review" : "  ·  propose a PR, thumbs-up the best"],
     "game.txt": [s.clock ? `GAME #${next}  ·  LIVE` : "NEXT GAME"],
     "clock.txt": [s.clock ?? `#${next}`],
     "standing.txt": [s.clock ? (s.standing ?? "") : s.lastResult ? `Last: ${s.lastResult}` : ""],
@@ -101,7 +98,7 @@ export function bandText(s: BandState, design: BandDesign = bandDesign({ width: 
   if (b) {
     const digits = tailDigits(b.decimals);
     const byAmount = digits >= 2 ? ` or amount ending .${"0".repeat(digits - 2)}12` : "";
-    parts["bribe.txt"] = b.thanks ? [b.thanks] : [`send $${b.ticker} to ${b.wallet}`, `  ·  memo #12${byAmount} backs PR #12`, "  ·  top pot plays next"];
+    parts["bribe.txt"] = b.thanks ? [b.thanks] : [`send $${b.ticker} to ${b.wallet}`, `  ·  memo #12${byAmount} promotes PR #12`, "  ·  top pots get reviewed first"];
   }
   // Each to the width of its slot (drawtext would run it off the band), and
   // never empty: ffmpeg can fail to map a zero-byte file.

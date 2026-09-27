@@ -1,11 +1,10 @@
 // One public match after another, on camera: open openfront.io, apply the
-// voted strategy, click into the public FFA lobby, flip the Jev switch in the
+// newest merged strategy, click into the public FFA lobby, flip the Jev switch in the
 // overlay so viewers see it happen, then watch the match until it ends and go
 // again. Every wait is bounded; any surprise sends the page home and retries.
 
-import { type Ballot, type BallotEntry, type GitHubBallot, pick, potOf } from "./ballot";
+import type { Ballot, GitHubBallot } from "./ballot";
 import type { BandState } from "./band";
-import type { BribeBook } from "./bribes";
 import type { Cdp } from "./cdp";
 import type { TraceSinkServer } from "../harness/log/sink";
 import type { StreamConfig } from "./config";
@@ -32,8 +31,6 @@ export interface DriverDeps {
   cdp: () => Cdp;
   pointer: (page: string) => Pointer;
   ballot: GitHubBallot;
-  // Bribes in the stream's coin: the biggest pot plays ahead of the votes.
-  bribes?: BribeBook;
   band: (patch: Partial<BandState>) => void;
   log: (line: string) => void;
   bundledCommit: () => string | null;
@@ -151,7 +148,7 @@ export class Driver {
     try {
       this.ballotState = await this.d.ballot.refresh();
       this.ballotAt = Date.now();
-      for (const r of this.ballotState.rejected) this.d.log(`[ballot] PR #${r.number} not on the ballot: ${r.reason}`);
+      for (const r of this.ballotState.rejected) this.d.log(`[ballot] PR #${r.number} isn't a proposal: ${r.reason}`);
       this.d.band({ ballot: this.ballotState });
     } catch (err) {
       // Keep the last good ballot; GitHub being down mustn't stop the stream.
@@ -190,11 +187,9 @@ export class Driver {
     if (overlay === null) throw new Retry("the Jev overlay didn't appear", 15_000);
 
     await this.refreshBallot();
-    const bribes = this.d.bribes;
-    const pots = bribes?.pots() ?? new Map<number, bigint>();
-    const entry = pick(this.ballotState, cfg.ballot.minVotes, pots, bribes?.minPot);
-    const pot = entry && bribes ? potOf(entry, pots, bribes.minPot) : 0n;
-    this.d.band({ playing: entry, playingPot: pot > 0n ? pot : null });
+    // The newest strategy the maintainer merged.
+    const entry = this.ballotState?.live ?? null;
+    this.d.band({ playing: entry });
     await setExtensionSettings(this.cdp, overlay, {
       apiKey: cfg.typesafeApiKey,
       model: cfg.model,
@@ -203,8 +198,7 @@ export class Driver {
       traceUrl: this.d.traces?.url ?? "",
       traceToken: this.d.traces?.token ?? "",
     });
-    const why = entry ? (pot > 0n && bribes ? `bribed ${bribes.format(pot)}` : `${entry.votes} votes`) : "";
-    this.d.log(`[driver] next game plays ${entry ? `"${entry.strategy.name}" (PR #${entry.number}, ${why})` : "Jev's own judgment"}`);
+    this.d.log(`[driver] next game plays ${entry ? `"${entry.strategy.name}" (${entry.file}, merged from PR #${entry.number} by @${entry.author})` : "Jev's own judgment"}`);
 
     // Pick the public FFA lobby.
     this.d.band({ status: "Finding the next public free-for-all lobby" });
@@ -244,13 +238,6 @@ export class Driver {
     }, cfg.lobbyTimeoutSeconds * 1000, 1000);
     if (!snap.inGame) throw new Retry(snap.error ? `lobby closed: ${snap.error}` : started ? "the lobby closed before the match started" : "the match never started", 5_000);
 
-    // The match is on: the pot that bought it is spent.
-    let bribe: string | null = null;
-    if (entry && bribes && pot > 0n) {
-      bribe = bribes.format(bribes.spend(entry.number));
-      this.d.log(`[bribe] PR #${entry.number}'s pot of ${bribe} is spent on this match`);
-    }
-
     const tracedBefore = this.d.traces?.latest() ?? null;
     const startedAt = Date.now();
     const result = await this.watch(page, overlay);
@@ -258,7 +245,7 @@ export class Driver {
     if (/JEV WON/.test(result)) this.wins++;
     this.d.log(`[driver] game ${this.games} over: ${result}`);
     this.d.commentator?.matchOver(result, this.games);
-    this.annotate(tracedBefore, { type: "stream_result", result, strategy: entry?.strategy ?? null, pr: entry?.number ?? null, votes: entry?.votes ?? null, bribe, wallMs: Date.now() - startedAt });
+    this.annotate(tracedBefore, { type: "stream_result", result, strategy: entry?.strategy ?? null, pr: entry?.number ?? null, wallMs: Date.now() - startedAt });
     this.d.band({ games: this.games, wins: this.wins, lastResult: result, status: `Match over: ${result}`, clock: null, standing: null });
     await Bun.sleep(4000);
     if (this.d.lab && cfg.lab && this.games % cfg.lab.everyGames === 0) await this.labSession(page);

@@ -7,7 +7,7 @@ export interface ExtensionSettings {
   model: string;
   decisionInterval: number;
   minConfidence: number;
-  // Viewer-voted playstyle, set by the stream driver (stream/); null plays
+  // Viewer-proposed playstyle, set by the stream driver (stream/); null plays
   // Jev's own judgment.
   strategy: Strategy | null;
   // Local trace sink (harness/log/sink.ts) the background worker posts game

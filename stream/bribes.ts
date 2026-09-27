@@ -1,12 +1,12 @@
-// Bribes: viewers pay Jev in the stream's pump.fun coin to play their
-// strategy. A bribe is a transfer of the coin to the stream's wallet that
-// names a strategy PR, either with a memo ("#12") or, for wallets that can't
-// attach one, with the PR number as the amount's last decimals (….000012).
-// Every PR has a pot. Before each match the ballot entry with the biggest pot
-// (at least BRIBE_MIN) plays, ahead of any 👍 count, and its pot is spent once
-// the match starts; other pots carry over. A pot for a PR that isn't on the
-// ballot (not approved yet) waits until it is. The stream only reads the
-// chain: it holds no key that can move funds, so there are no refunds.
+// Bribes: anyone can propose a strategy PR (stream/ballot.ts); viewers pay in
+// the stream's pump.fun coin to promote one up the maintainer's review queue.
+// A bribe is a transfer of the coin to the stream's wallet that names a PR,
+// either with a memo ("#12") or, for wallets that can't attach one, with the
+// PR number as the amount's last decimals (….000012). Each PR has a pot that
+// grows while it's open; pots of at least BRIBE_MIN rank ahead of any 👍 count
+// on the band. A bribe buys attention, not a match: only the maintainer
+// merges, and only merged strategies play. The stream only reads the chain:
+// it holds no key that can move funds, so there are no refunds.
 //
 // The chain is read over Solana JSON-RPC: the wallet's token accounts for the
 // coin, their new signatures, and each transaction's token balance changes
@@ -25,14 +25,6 @@ export interface Bribe {
   // The PR it backs; null for a tip that names none.
   pr: number | null;
   blockTime: number | null;
-}
-
-// What the driver needs: the pots and a way to spend one.
-export interface BribeBook {
-  pots(): ReadonlyMap<number, bigint>;
-  readonly minPot: bigint;
-  spend(pr: number): bigint;
-  format(raw: bigint): string;
 }
 
 export interface BribeOptions {
@@ -155,7 +147,7 @@ export function formatTokens(raw: bigint, decimals: number): string {
 // "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU" → "7xKX…gAsU"
 export const shortAddress = (a: string) => (a.length > 10 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a);
 
-export class SolanaBribes implements BribeBook {
+export class SolanaBribes {
   private readonly fetch: typeof fetch;
   private readonly ledger: Ledger;
   private readonly recent: Set<string>;
@@ -187,14 +179,6 @@ export class SolanaBribes implements BribeBook {
       if (total > 0n) pots.set(Number(pr), total);
     }
     return pots;
-  }
-
-  // The PR's match started: its pot is spent. Returns what was in it.
-  spend(pr: number): bigint {
-    const spent = this.pots().get(pr) ?? 0n;
-    delete this.ledger.pots[String(pr)];
-    this.save();
-    return spent;
   }
 
   // Counts every bribe that arrived since the last refresh and returns them.

@@ -65,7 +65,7 @@ export interface ObserveInput {
   seaReachable: ReadonlySet<string>;
   goldPerMin: number;
   econ: EconomySnapshot;
-  // The viewer-voted playstyle, if any (strategy/doctrine.ts).
+  // The viewer-proposed playstyle, if any (strategy/doctrine.ts).
   strategy?: Strategy;
 }
 

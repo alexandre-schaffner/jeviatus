@@ -1,10 +1,10 @@
-# Vote on Jev's strategy
+# Pick Jev's strategy
 
 Jev plays public [OpenFront](https://openfront.io) matches live on Kick and pump.fun, around the clock. You decide how it plays.
 
-- **Vote:** give a 👍 reaction to a strategy pull request. Before each match, the approved strategy PR with the most 👍 is the one that plays. One vote per GitHub account; bots don't count.
-- **Bribe:** send the stream's coin to the wallet shown on stream, with the memo `#<PR number>` or an amount ending in it (`5000.000012` backs PR #12). The approved PR with the biggest pot plays next, ahead of any vote count, and its pot is spent on that match. Details: [stream/README.md](../stream/README.md#bribes).
-- **Propose:** open a pull request that adds a single file, `strategies/<your-strategy>.json`.
+- **Propose:** anyone can open a pull request that adds a single file, `strategies/<your-strategy>.json`.
+- **Promote:** give a 👍 to the proposals you like (one per GitHub account; bots don't count), or bribe with the stream's pump.fun coin. To bribe, send the coin to the wallet shown on stream with the memo `#<PR number>`, or with an amount ending in it (`5000.000012` promotes PR #12). The band shows the leading proposals, biggest bribes first, then most 👍. Details: [stream/README.md](../stream/README.md#bribes).
+- **Ship:** the maintainer reviews and merges. The newest merged strategy is what Jev plays, until the next one is merged. Votes and bribes decide what gets looked at first, not what gets merged.
 
 ```json
 {
@@ -26,10 +26,12 @@ Jev (TypeSafe's System One model) picks among the moves that are legal right now
 
 Strategies are data only: a strategy PR never runs code on the stream.
 
-## Getting on the ballot
+## From proposal to stream
 
-1. The `strategy` check must pass: the PR changes exactly one file, `strategies/<lowercase-name>.json`, and it validates.
-2. A maintainer approves the PR. The approval covers that exact commit, so pushing changes afterwards takes the PR off the ballot until it's approved again.
-3. Collect 👍 or bribes. The live strip under the game shows the top three.
+1. The `strategy` check must pass: the PR changes exactly one file, `strategies/<lowercase-name>.json`, and it validates. It then shows in the review queue on stream.
+2. Collect 👍 and bribes to move it up the queue.
+3. The maintainer merges it, maybe after asking for changes. From the next match on, it's what Jev plays.
+
+A maintainer can hide a proposal from the stream by labeling it `off-ballot`, so keep names fit for a public stream. There are no refunds for bribes on proposals that are closed or never merged.
 
 Want to try a strategy locally first? Run `bun run play --strategy strategies/<yours>.json` (see the harness setup in the repo).

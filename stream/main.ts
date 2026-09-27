@@ -18,10 +18,11 @@ import { type Bribe, shortAddress, SolanaBribes } from "./bribes";
 import { Cdp } from "./cdp";
 import { Character } from "./character";
 import { Lab, secretValues } from "./lab";
+import { refreshReferences } from "../harness/improve/references";
 import { ensureLofi } from "./lofi";
 import { audioFiles, Playlist } from "./music";
 import { Studio } from "./studio";
-import { VoicePump } from "./voice";
+import { AudioPump } from "./audio";
 import { loadStreamConfig } from "./config";
 import { Driver } from "./driver";
 import { describeOutputs, ffmpegArgs, slaveFailure } from "./encoder";
@@ -52,7 +53,6 @@ const bribeBand = (thanks: string | null = null): BandState["bribe"] =>
 const bandState: BandState = {
   repo: cfg.ballot.repo,
   playing: null,
-  playingPot: null,
   ballot: null,
   bribe: bribeBand(),
   status: "Starting up",
@@ -249,7 +249,7 @@ const onDrop = (line: string) => {
 // Homebrew's plain ffmpeg lacks drawtext (the band); ffmpeg-full has it.
 const FFMPEG_FULL = "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg";
 const ffmpegBin = process.env.FFMPEG_BIN ?? (!container && existsSync(FFMPEG_FULL) ? FFMPEG_FULL : "ffmpeg");
-// --- the stream's own audio: lofi, and the commentator's voice over it --------------
+// --- the stream's own audio: lofi -----------------------------------------------------
 
 // Your own tracks if MUSIC_DIR has any; else the original lofi, composed on first run.
 if (cfg.music) mkdirSync(cfg.music.dir, { recursive: true });
@@ -262,17 +262,16 @@ const music = cfg.music
     }, process.env.FFMPEG_BIN ?? (!container && existsSync("/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg") ? "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg" : "ffmpeg"), log)
   : null;
 if (cfg.music) log(`[music] ${ownTracks.length ? `${ownTracks.length} track(s) from ${cfg.music.dir}` : `original lofi from ${cfg.music.generatedDir}`}`);
-const voice = cfg.character !== null || music !== null;
 const ffmpeg = new Supervised({
   name: "ffmpeg",
   // Segment names are UTC start times (stream/recordings.ts).
   env: { ...env, TZ: "UTC" },
   stdin: !container,
-  fd3: voice,
+  fd3: music !== null,
   cmd: () => [
     ffmpegBin,
     ...ffmpegArgs(
-      { ...cfg, source: container ? "x11" : "pipe", voice },
+      { ...cfg, source: container ? "x11" : "pipe", mix: music !== null },
       { dir: band.dir, ...bandShape },
       record ?? undefined,
     ),
@@ -286,14 +285,14 @@ log(`[ffmpeg] streaming ${cfg.width}x${cfg.height}@${cfg.fps} ${cfg.videoKbps}kb
 ffmpeg.start();
 
 // The mix is the encoder's pipe:3 audio.
-const mix = voice ? new VoicePump((pcm) => void ffmpeg.write3(pcm), { music, musicGain: cfg.music?.volume }) : null;
+const mix = music ? new AudioPump((pcm) => void ffmpeg.write3(pcm), music, cfg.music?.volume) : null;
 music?.start();
 // The lab's screen, and the pages worth filming (and drawing the commentator on).
 const studio = cfg.lab ? new Studio(secretValues()) : null;
 studio?.start();
 const studioBase = studio ? studio.url.replace(/\/studio$/, "") : null;
 const filmable = (url: string) => url.startsWith(cfg.openfrontUrl) || (studioBase !== null && url.startsWith(studioBase));
-const character = cfg.character && mix ? new Character({ cfg: cfg.character, filmable, cdp: () => cdp, pump: mix, log }) : null;
+const character = cfg.character ? new Character({ cfg: cfg.character, filmable, cdp: () => cdp, log }) : null;
 const screencast = container
   ? null
   : new Screencast({
@@ -325,7 +324,7 @@ if (bribes && cfg.bribe) {
   let thanksUntil = 0;
   const thanks = (b: Bribe): string => {
     const entry = b.pr === null ? undefined : bandState.ballot?.entries.find((e) => e.number === b.pr);
-    const what = b.pr === null ? "a tip, thank you" : entry ? `for PR #${b.pr} "${entry.strategy.name}"` : `for PR #${b.pr} (it plays once it's on the ballot)`;
+    const what = b.pr === null ? "a tip, thank you" : entry ? `for PR #${b.pr} "${entry.strategy.name}"` : `for PR #${b.pr} (not an open strategy proposal)`;
     return `NEW BRIBE  >  ${shortAddress(b.from)} sent ${bribes.format(b.amount)} ${what}`;
   };
   let latest: string | null = null;
@@ -373,8 +372,7 @@ const driver = new Driver({
   cfg,
   cdp: live,
   pointer: (page): Pointer => (cfg.pointer === "cdp" ? new CdpPointer(live(), page) : xdotool),
-  ballot: new GitHubBallot({ repo: cfg.ballot.repo, token: cfg.ballot.token, requireApproval: cfg.ballot.requireApproval }),
-  bribes: bribes ?? undefined,
+  ballot: new GitHubBallot({ repo: cfg.ballot.repo, token: cfg.ballot.token, blockLabel: cfg.ballot.blockLabel }),
   // A match starting (the build it plays on) or ending (a game for the build
   // under test): the lab's row catches up.
   band: (patch) => setBand("playing" in patch || "games" in patch ? { ...patch, lab: labBand() } : patch),
@@ -400,6 +398,15 @@ const driver = new Driver({
 setInterval(() => {
   if (chromium.running && (!cdp || cdp.closed)) void connect().catch((e) => log(`[driver] reconnect failed: ${e.message}`));
 }, 2000);
+// What the lab's changes must be grounded in (besides OpenFront's code): the
+// wikis and r/OpenFrontIO, fetched slowly in the background, once a day.
+if (cfg.lab) {
+  const refs = path.join(cfg.lab.dir, "references");
+  const reddit = process.env.REDDIT_CLIENT_ID?.trim() && process.env.REDDIT_CLIENT_SECRET?.trim() ? { clientId: process.env.REDDIT_CLIENT_ID.trim(), clientSecret: process.env.REDDIT_CLIENT_SECRET.trim() } : null;
+  const refresh = () => void refreshReferences(refs, log, { reddit }).catch((e) => log(`[references] ${e instanceof Error ? e.message : String(e)}`));
+  refresh();
+  setInterval(refresh, 6 * 3_600_000);
+}
 const lab =
   cfg.lab && studio
     ? new Lab(
@@ -413,6 +420,7 @@ const lab =
           maxMinutes: cfg.lab.maxMinutes,
           model: cfg.lab.model,
           prs: cfg.lab.prs,
+          references: path.join(cfg.lab.dir, "references"),
         },
         {
           studio,

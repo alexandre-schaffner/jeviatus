@@ -24,9 +24,11 @@ import path from "node:path";
 import { type GameRecord, findTraces, parseTrace } from "../harness/analyze/load";
 import { aggregate, buildReport, gameRow, renderMoment, renderReport } from "../harness/analyze/report";
 import { comparisonMarkdown, gamesFor, isBetter, measure, outsideAllowlist } from "../harness/improve/measure";
+import { checkCitations, describeProblems, type GroundingResult, parseCitations, referenceTexts } from "../harness/improve/grounding";
 import { ANALYSIS_DIR, changePrompt, type PastAttempt, parseProposal, PROPOSAL_FILE } from "../harness/improve/prompt";
+import { REFERENCES_DIR } from "../harness/improve/references";
 import type { LabBand } from "./band";
-import type { Mood } from "./voice";
+import type { Mood } from "./avatar";
 import type { Studio } from "./studio";
 
 export interface LabOptions {
@@ -40,6 +42,8 @@ export interface LabOptions {
   maxMinutes: number;
   model: string | null;
   prs: boolean;
+  // The wikis and r/OpenFrontIO, saved by harness/improve/references.ts.
+  references: string;
 }
 
 export interface LabDeps {
@@ -68,6 +72,9 @@ interface LabState {
   attempts: PastAttempt[];
   changes: number;
 }
+
+// The lab's commits are machine-made and local: never signed.
+const UNSIGNED = ["-c", "commit.gpgsign=false"];
 
 // Claude Code's tools: read and edit, run typecheck and tests, look at git. Nothing else.
 const TOOLS = "Read,Edit,Write,Glob,Grep,Bash(bun run typecheck),Bash(bun test:*),Bash(git diff:*),Bash(git status:*)";
@@ -265,7 +272,7 @@ export class Lab {
     await this.sh(["git", "read-tree", "HEAD"], { env });
     await this.sh(["git", "add", "-A", "--", ".", ":!vendor"], { env });
     const tree = (await this.sh(["git", "write-tree"], { env })).out;
-    const commit = (await this.sh(["git", "commit-tree", tree, "-p", "HEAD", "-m", "Jev's lab: baseline (snapshot of the working tree)"])).out;
+    const commit = (await this.sh(["git", ...UNSIGNED, "commit-tree", tree, "-p", "HEAD", "-m", "Jev's lab: baseline (snapshot of the working tree)"])).out;
     // A ref keeps it from being garbage-collected.
     await this.sh(["git", "update-ref", "refs/jev-lab/baseline", commit]);
     fs.rmSync(index, { force: true });
@@ -418,6 +425,8 @@ export class Lab {
     const cmd = ["claude", "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--allowedTools", TOOLS];
     if (this.o.model) cmd.push("--model", this.o.model);
     if (resume) cmd.push("--resume", resume);
+    // OpenFront's code is a symlink out of the worktree: let the file tools read it.
+    cmd.push("--add-dir", fs.realpathSync(path.join(this.o.repo, "vendor", "OpenFrontIO")));
     const p = Bun.spawn(cmd, { cwd: this.wt, env: claudeEnv(), stdin: new Blob([prompt]), stdout: "pipe", stderr: "pipe" });
     const timer = setTimeout(() => p.kill(), this.o.maxMinutes * 60_000);
     let sessionId: string | null = null;
@@ -474,6 +483,17 @@ export class Lab {
     this.link();
   }
 
+  // Checks the proposal's citations and shows them on screen.
+  private ground(body: string): GroundingResult {
+    const r = checkCitations(parseCitations(body), { root: this.wt, references: referenceTexts(path.join(this.wt, REFERENCES_DIR)) });
+    const { studio } = this.d;
+    studio.line("tool", "> checking the Grounding citations");
+    for (const c of r.ok) studio.line("ok", `  ok  ${c.kind}: ${c.ref}${c.lines ? `:L${c.lines[0]}-L${c.lines[1]}` : ""}  "${c.quote.slice(0, 90)}"`);
+    for (const b of r.bad) studio.line("err", `  bad ${b.citation.kind}: ${b.citation.ref}: ${b.why}`);
+    if (r.ok.length === 0 && r.bad.length === 0) studio.line("err", "  no citations");
+    return r;
+  }
+
   private async propose(from: Build, games: GameRecord[]): Promise<void> {
     const { studio } = this.d;
     const s = this.state;
@@ -490,9 +510,11 @@ export class Lab {
     const { report, moments } = buildReport(games);
     for (const m of moments) fs.writeFileSync(path.join(dir, "moments", m.file), renderMoment(m));
     fs.writeFileSync(path.join(dir, "report.md"), renderReport(report));
+    // What the change must be grounded in, besides OpenFront's code.
+    if (fs.existsSync(this.o.references)) fs.cpSync(this.o.references, path.join(this.wt, REFERENCES_DIR), { recursive: true });
     studio.line("head", `Change ${n}: Claude Code, from ${games.length} games on ${from.sha.slice(0, 7)}`);
 
-    let run = await this.claude(changePrompt({ games: games.length, commit: from.sha, past: s.attempts }), null);
+    let run = await this.claude(changePrompt({ games: games.length, commit: from.sha, past: s.attempts, references: REFERENCES_DIR }), null);
     studio.step(2, run.ok ? "done" : "fail");
     studio.step(3, "active");
     let check = await this.verify();
@@ -502,7 +524,22 @@ export class Lab {
       check = await this.verify();
     }
     const file = path.join(this.wt, PROPOSAL_FILE);
-    const proposal = fs.existsSync(file) ? parseProposal(fs.readFileSync(file, "utf8")) : null;
+    let proposal = fs.existsSync(file) ? parseProposal(fs.readFileSync(file, "utf8")) : null;
+    // Grounded, or not at all: every citation must check out against its source.
+    let grounding: GroundingResult | null = null;
+    if (proposal && !proposal.noChange && check.ok) {
+      grounding = this.ground(proposal.body);
+      if (!grounding.grounded && run.sessionId) {
+        studio.line("head", "Citations don't check out: one round to fix them");
+        run = await this.claude(
+          `The Grounding section of ${PROPOSAL_FILE} doesn't check out:\n\n${describeProblems(grounding)}\n\nFix the citations: quote verbatim from the cited lines, page or post (URL from the file's first line). If the evidence doesn't support the change, revert the change and write "NO CHANGE" instead. Keep typecheck and tests passing.`,
+          run.sessionId,
+        );
+        check = await this.verify();
+        proposal = fs.existsSync(file) ? parseProposal(fs.readFileSync(file, "utf8")) : null;
+        grounding = proposal && !proposal.noChange ? this.ground(proposal.body) : null;
+      }
+    }
     const files = await this.changedFiles();
     const reason = !proposal
       ? `no ${PROPOSAL_FILE} written`
@@ -514,7 +551,9 @@ export class Lab {
             ? `changed files outside the decision system: ${outsideAllowlist(files).join(", ")}`
             : !check.ok
               ? "typecheck/tests still fail"
-              : null;
+              : !grounding?.grounded
+                ? `not grounded in OpenFront's code, the wikis or r/OpenFrontIO (${grounding ? describeProblems(grounding).split("\n")[0] : "no citations"})`
+                : null;
     if (proposal?.noChange) {
       studio.step(3, "skip");
       studio.step(4, "skip");
@@ -533,7 +572,12 @@ export class Lab {
       s.attempts.push({ title: proposal?.title ?? `change ${n}`, verdict: `dropped (${reason})` });
       this.save();
       await this.discard();
-      this.d.announce("lab_failed", `Claude Code's change was dropped: ${reason}.`, "The robot's change broke the tests. Great job, robot. Really great job.", "angry");
+      this.d.announce(
+        "lab_failed",
+        `Claude Code's change was dropped: ${reason}.`,
+        reason?.startsWith("not grounded") ? "The robot tried to rewire the kid's brain with zero evidence. Made-up facts! Dropped!" : "The robot's change broke the tests. Great job, robot. Really great job.",
+        "angry",
+      );
       if (this.installedSha() !== from.sha) await this.install(from);
       return;
     }
@@ -541,10 +585,13 @@ export class Lab {
     studio.step(4, "active");
     const slug = proposal.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
     const branch = `jev-lab/${n}-${slug}`;
-    await this.sh(["git", "checkout", "--quiet", "-B", branch], { cwd: this.wt });
     await this.sh(["git", "add", "--", ...files], { cwd: this.wt });
-    await this.sh(["git", "commit", "--quiet", "-m", proposal.title, "-m", proposal.body, "-m", "Co-Authored-By: Claude Code <noreply@anthropic.com>"], { cwd: this.wt });
+    // Unsigned: nobody is at the keyboard to unlock a signing key (1Password's
+    // SSH signing fails unattended, and every change was lost to it).
+    await this.sh(["git", ...UNSIGNED, "commit", "--quiet", "-m", proposal.title, "-m", proposal.body, "-m", "Co-Authored-By: Claude Code <noreply@anthropic.com>"], { cwd: this.wt });
     const sha = (await this.sh(["git", "rev-parse", "HEAD"], { cwd: this.wt })).out;
+    // The branch only once the commit exists: a failed commit leaves no empty branch behind.
+    await this.sh(["git", "branch", "--force", branch, sha], { cwd: this.wt });
     studio.line("ok", `committed ${sha.slice(0, 7)} on ${branch}: ${proposal.title}`);
     let pr: string | null = null;
     if (this.o.prs && s.baseBranch && from.sha === s.baseline?.sha) {

@@ -35,7 +35,7 @@ export interface AgentOptions {
   log?: (line: string) => void;
   // Live overlay feed: one event per decision step.
   onEvent?: (e: OverlayEvent) => void;
-  // Viewer-voted playstyle: Jev reads its doctrine as state, and its goal
+  // Viewer-proposed playstyle: Jev reads its doctrine as state, and its goal
   // (if any) is the starting goal.
   strategy?: Strategy;
 }

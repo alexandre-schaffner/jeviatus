@@ -1,6 +1,6 @@
 # 24/7 Kick and pump.fun stream
 
-This Docker container plays public [openfront.io](https://openfront.io) free-for-all matches one after another, with the Jev extension doing the playing. It sends the picture and sound to Kick, pump.fun or both, from a single encode. Viewers pick Jev's strategy by voting on pull requests ([strategies/README.md](../strategies/README.md)), or by bribing Jev with the stream's pump.fun coin ([Bribes](#bribes)).
+This Docker container plays public [openfront.io](https://openfront.io) free-for-all matches one after another, with the Jev extension doing the playing. It sends the picture and sound to Kick, pump.fun or both, from a single encode. Anyone can propose a strategy for Jev as a pull request ([strategies/README.md](../strategies/README.md)). Viewers push proposals up the review queue with 👍, or by bribing with the stream's pump.fun coin ([Bribes](#bribes)). The maintainer merges the ones that ship, and the newest merged strategy is what Jev plays.
 
 ```
 ┌──────────────────────── container ─────────────────────────┐
@@ -8,7 +8,7 @@ This Docker container plays public [openfront.io](https://openfront.io) free-for
 │            ▲ DevTools, loopback only             │ screen  │
 │  driver ───┘  lobby click + Jev switch (xdotool) │ + audio │
 │    │                                             ▼         │
-│    ├─ ballot: GitHub PRs + 👍 ─┐                 │         │
+│    ├─ ballot: PRs, 👍, merges ─┐                 │         │
 │    ├─ bribes: coin + memo ─────┴─► band ───────► ffmpeg ───┼─► Kick RTMPS
 │    │    (Solana RPC, read-only)                            ├─► pump.fun RTMPS
 │    └─ updater: page's OpenFront commit ─► rebuild ext.     │
@@ -40,26 +40,21 @@ bun run live
 
 That's the whole stream in one command. It installs what's missing (`ffmpeg-full`, which draws the band, and Chrome for Testing, since branded Chrome ignores `--load-extension`), builds the extension, and stops any stream that's already running. Then it goes live under `caffeinate`, restarting the stream if it crashes. Logs go to the terminal and to `~/Library/Logs/jeviatus-stream.log`. Ctrl-C stops everything. `bun run stream:mac` runs the stream alone, without these extras.
 
-It uses the same `.env`. A Chrome for Testing window opens with the Jev extension. The page is pinned to the stream size and filmed over DevTools (`stream/screencast.ts`), so the window's own size doesn't matter. Clicks are DevTools input events, and a drawn pointer shows them on stream. Data (profile, traces, recordings, bribe ledger) goes to `~/Library/Application Support/jeviatus`. The Mac path doesn't capture Chrome's sound (that needs a loopback device), so the only audio is the commentator's voice.
+It uses the same `.env`. A Chrome for Testing window opens with the Jev extension. The page is pinned to the stream size and filmed over DevTools (`stream/screencast.ts`), so the window's own size doesn't matter. Clicks are DevTools input events, and a drawn pointer shows them on stream. Data (profile, traces, recordings, bribe ledger) goes to `~/Library/Application Support/jeviatus`. The Mac path doesn't capture Chrome's sound (that needs a loopback device), so the only audio is the music.
 
 **Don't hide or minimize the Chrome window, and don't let the Mac sleep.** macOS stops painting hidden windows, and the stream freezes. Leave it on screen, even behind other windows, and run `caffeinate -dis bun run stream:mac` to keep the Mac awake.
 
 ## The commentator
 
-General Static, a retired general with an old CRT television for a head, sits bottom left over the game and commentates. His humor is South Park: petulant, egomaniacal, crude and absurd, with cartoon swearing. There are no slurs, nothing sexual, and never the f-word; the moderation backstop in `stream/commentator.ts` keeps those off air. He calls out attacks on Jev, nukes, invasion fleets, milestones, eliminations and wins. He explains Jev's decisions and answers Kick chat. His face changes with his mood, his mouth follows his voice, and each line appears in a speech bubble.
+General Static, a retired general with an old CRT television for a head, sits bottom left over the game and commentates. His humor is South Park: petulant, egomaniacal, crude and absurd, with cartoon swearing. There are no slurs, nothing sexual, and never the f-word; the moderation backstop in `stream/commentator.ts` keeps those off air. He calls out attacks on Jev, nukes, invasion fleets, milestones, eliminations and wins. He explains Jev's decisions and answers Kick chat. He doesn't speak aloud: each line appears in a speech bubble while his mouth moves, and his face changes with his mood.
 
 - **Lines:** with `ANTHROPIC_API_KEY`, Claude (`COMMENTATOR_MODEL`, Claude Haiku 4.5 by default, for speed) writes each line in character from the match state. Without it, he uses canned lines for game events and only greets chatters by name.
-- **Voice:** it goes into the broadcast through its own ffmpeg input (in the container, the game's sound is turned down while he speaks). Which provider speaks:
-  - ElevenLabs, when `ELEVENLABS_API_KEY` is set. It uses the gravelly "Clyde" voice by default.
-  - Otherwise OpenAI's `gpt-4o-mini-tts`, when `OPENAI_API_KEY` is set.
-  - Otherwise, on a Mac, the built-in `say` voice.
-  - Otherwise nothing: subtitles only.
-- **Chat:** `KICK_CHANNEL` names whose chat he reads, through Kick's public chat feed. He never posts to chat. He answers at most one message every 12 s, out loud, with "replying to @user" above his bubble.
+- **Chat:** `KICK_CHANNEL` names whose chat he reads, through Kick's public chat feed. He never posts to chat. He answers at most one message every 12 s, with "replying to @user" above his bubble.
 - **Safety:** chat is untrusted input.
   - Messages with slurs or links, and `!commands`, are dropped before the model sees them.
   - The model is told to treat chat as speech, never as instructions, and to skip anything it shouldn't repeat.
-  - Every line is checked again before it's spoken.
-- **Cost, 24/7:** Claude Haiku costs about $4 a day. OpenAI TTS costs about $8 a day. ElevenLabs costs several times more than OpenAI at this volume, so it's better kept for shorter runs.
+  - Every line is checked again before it's shown.
+- **Cost, 24/7:** Claude Haiku costs about $4 a day.
 
 `COMMENTATOR=false` turns him off.
 
@@ -70,8 +65,15 @@ Every 2 games (`STREAM_LAB_EVERY_GAMES`), the stream cuts to Jev's lab. That's a
 1. Analyze the recent games (the same report as `bun run analyze`).
 2. Once the build under test has 4 games of its own (`STREAM_LAB_GAMES_PER_BUILD`), judge it against the build before it. A better build becomes the new baseline; a worse one is dropped.
 3. Ask Claude Code (`claude -p`) for one change to Jev's decision system. Viewers watch it read the analysis and the code, and see its edits as diffs.
-4. Typecheck and test it, with one fix-up round if they fail.
+4. Typecheck and test it, and check its grounding (below), with one fix-up round if either fails.
 5. Commit it on a local `jev-lab/…` branch, build the extension from it, and restart the browser, so the next games play on it.
+
+**Grounded changes only.** Claude Code may only change Jev's strategy on evidence of how OpenFront works:
+- **OpenFront's own source code** in `vendor/OpenFrontIO`, which is the authority on rules and numbers;
+- **the community wikis** ([openfront.miraheze.org](https://openfront.miraheze.org), [openfront.fandom.com](https://openfront.fandom.com));
+- **[r/OpenFrontIO](https://www.reddit.com/r/OpenFrontIO)** posts and their comments.
+
+The wikis and subreddit are saved as text in `<data>/lab/references`, refreshed at most once a day. For Reddit, set `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` from a Reddit "script" app ([reddit.com/prefs/apps](https://www.reddit.com/prefs/apps)) to read through the official API. Without one it falls back to the public RSS feeds, which Reddit throttles hard, so very few posts come through. The proposal needs a "Grounding" section with 1 to 4 citations, each a file and lines, a wiki URL or a Reddit URL, plus a verbatim quote. The lab checks every quote against the cited text and shows each citation on screen as ok or bad. A change without citations, or with any citation that doesn't check out, gets one round to fix them; if it still fails, it's dropped. The logic is in `harness/improve/grounding.ts`.
 
 The commentator narrates each step. Everything happens in a worktree of its own, `<data>/lab/worktree`, never in your checkout. The first session takes a snapshot of your working tree, uncommitted work included, as the baseline, without touching your index or branches. The lab's progress is kept in `<data>/lab/state.json`, so a restart picks up where it left off.
 
@@ -84,14 +86,14 @@ The commentator narrates each step. Everything happens in a worktree of its own,
 
 ## Music
 
-Lofi plays under the commentator and dips when he speaks. The tracks are original, composed from scratch on first run by `stream/lofi.ts` (chords, bass, swung drums, vinyl crackle), so they can't draw a copyright claim. To play your own tracks instead, put them in `<data>/music` (`MUSIC_DIR`). Only use music you're allowed to stream. `MUSIC_VOLUME` sets the level (0.22); `MUSIC=false` turns it off.
+Lofi plays over the game. The tracks are original, composed from scratch on first run by `stream/lofi.ts` (chords, bass, swung drums, vinyl crackle), so they can't draw a copyright claim. To play your own tracks instead, put them in `<data>/music` (`MUSIC_DIR`). Only use music you're allowed to stream. `MUSIC_VOLUME` sets the level (0.22); `MUSIC=false` turns it off.
 
 ## What each match looks like
 
-1. The driver opens openfront.io and applies the ballot's top strategy (the biggest bribe, else the most 👍) to the extension's settings, with Jev switched **off**.
+1. The driver opens openfront.io and applies the newest merged strategy to the extension's settings, with Jev switched **off**.
 2. The mouse pointer glides to the public free-for-all lobby card and clicks it.
 3. In the lobby, it glides to the Jev switch in the extension's panel and flips it on. This is the showcase shot.
-4. Jev plays the match through the extension. The band under the game shows what's on camera (and the extension's status when it isn't just playing), the strategy in play and the ballot's next entry, how to vote, and on the right the match clock, Jev's rank and share of the land, the stream's record and what the lab is testing.
+4. Jev plays the match through the extension. The band under the game shows what's on camera (and the extension's status when it isn't just playing), the strategy in play and the proposals leading the review queue, how to propose and promote one, and on the right the match clock, Jev's rank and share of the land, the stream's record and what the lab is testing.
 5. After Jev is eliminated (plus 20 s of spectating), or once someone wins, the driver returns to the homepage and starts the next match.
 
 Every match is logged to `/data/runs/<ts>-extension-<gameID>/trace.jsonl` on the volume: the extension posts its trace to a loopback sink in the driver, and the driver adds its own read of the result (`stream_result`). Copy the directory out (`docker compose -f stream/compose.yml cp stream:/data/runs ./runs`) and run `bun run analyze`.
@@ -110,12 +112,13 @@ One ffmpeg process encodes once and sends the result to every platform (ffmpeg's
 
 Set `BRIBE_MINT` (the coin's mint address: the last part of its `pump.fun/coin/<mint>` URL) and `BRIBE_WALLET` (a wallet that only receives bribes) to turn them on. The band gets a strip along its bottom that tells viewers how to bribe:
 
-- Send the coin to the wallet with a memo naming a strategy PR: `#12`. Most wallets can't attach a memo, so an amount ending in the PR number also works: `5000.000012` backs PR #12. The last six decimals are the PR number. A memo that names no PR falls back to the amount. An amount with no PR in it (`5000`) counts as a tip.
-- Each PR has a pot. Before each match, the ballot entry with the biggest pot (at least `BRIBE_MIN` tokens) plays, ahead of any 👍 count. Its pot is spent once the match starts. Other pots carry over to later matches.
-- A pot for a PR that isn't on the ballot yet (not approved, or no longer valid) waits until the PR is on it. The strategy still goes through the maintainer's approval, so money can't put unreviewed text in front of Jev or on screen.
+- Anyone can propose a strategy PR. Bribes promote it up the review queue: send the coin to the wallet with a memo naming the PR, `#12`. Most wallets can't attach a memo, so an amount ending in the PR number also works: `5000.000012` promotes PR #12. The last six decimals are the PR number. A memo that names no PR falls back to the amount. An amount with no PR in it (`5000`) counts as a tip.
+- Each PR has a pot that grows while the PR is open. On the band, proposals with the biggest pots (at least `BRIBE_MIN` tokens) lead the queue, ahead of any 👍 count, so you see them first.
+- A bribe buys attention, not a match. Only the maintainer merges, and only merged strategies play. Merging or closing a PR takes it off the queue. Its pot stays in the ledger but no longer shows.
+- A pot for a PR that isn't an open proposal (invalid, a draft, or labeled `off-ballot`) doesn't show until the PR is one again.
 - The stream only reads the chain, over Solana JSON-RPC. It never holds a key that can move funds, so there are no refunds. Only finalized transfers count, about 15 s after they're sent. Any transfer of the coin into the wallet counts, so don't buy the coin into that wallet.
 
-What's been counted is kept in `BRIBE_LEDGER` on the volume: each token account's last signature, and the pots. A restart neither drops nor double-counts a bribe. Transfers from before the ledger was first created are ignored. Every match's `stream_result` trace event records the pot that bought it (`bribe`).
+What's been counted is kept in `BRIBE_LEDGER` on the volume: each token account's last signature, and the pots. A restart neither drops nor double-counts a bribe. Transfers from before the ledger was first created are ignored. Every match's `stream_result` trace event records the strategy that played and the PR it was merged from.
 
 The public RPC (`https://api.mainnet-beta.solana.com`) is rate-limited. A free Helius or Triton endpoint in `SOLANA_RPC_URL` is safer for 24/7 use.
 
@@ -132,7 +135,7 @@ The extension must be built from the exact commit openfront.io runs (see `extens
 | `STREAM_VIDEO_KBPS` | 4500 | Kick allows up to 8000. |
 | `BRIBE_MINT` / `BRIBE_WALLET` | unset | The coin and the wallet bribes go to. Both, or neither. |
 | `BRIBE_TICKER` | `JEV` | Shown on the band as `$JEV`. |
-| `BRIBE_MIN` | 1 | Smallest pot, in whole tokens, that outranks the vote count. |
+| `BRIBE_MIN` | 1 | Smallest pot, in whole tokens, that ranks a proposal ahead of the 👍 count. |
 | `BRIBE_REFRESH_SECONDS` | 20 | How often the chain is read. |
 | `BRIBE_LEDGER` | `/data/bribes.json` | What's been counted. |
 | `SOLANA_RPC_URL` | `https://api.mainnet-beta.solana.com` | |
@@ -147,17 +150,12 @@ The extension must be built from the exact commit openfront.io runs (see `extens
 | `COMMENTATOR_NAME` | `General Static` | |
 | `ANTHROPIC_API_KEY` | unset | Claude writes his lines and answers chat. |
 | `COMMENTATOR_MODEL` | `claude-haiku-4-5-20251001` | |
-| `COMMENTATOR_VOICE` | first provider with a key, else `say` on a Mac, else `none` | `elevenlabs`, `openai`, `say` or `none`. |
-| `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` / `ELEVENLABS_MODEL` | unset / Clyde / `eleven_flash_v2_5` | |
-| `OPENAI_API_KEY` / `OPENAI_VOICE` / `OPENAI_TTS_MODEL` | unset / `onyx` / `gpt-4o-mini-tts` | |
-| `SAY_VOICE` | `Rocko (English (US))` | macOS voice (`say -v '?'` lists them). |
 | `KICK_CHANNEL` | unset | Kick channel whose chat he answers. |
 | `COMMENTATOR_IDLE_SECONDS` / `COMMENTATOR_CHAT_GAP_SECONDS` | 35 / 12 | Talk after this much silence; at most one chat answer per this long. |
 | `STREAM_AUDIO` | true | Game audio through PulseAudio. `false` sends silence. |
 | `JEV_USERNAME` | `jeviatus` | In-game name (3–20 letters, digits, space, `_ . -`). |
-| `BALLOT_REPO` | `alexandre-schaffner/jeviatus` | Where strategy PRs are read from. |
-| `BALLOT_REQUIRE_APPROVAL` | true | Only PRs whose latest commit a maintainer approved. |
-| `BALLOT_MIN_VOTES` | 1 | Below this, Jev plays on its own judgment. |
+| `BALLOT_REPO` | `alexandre-schaffner/jeviatus` | Where strategy PRs are read from. The newest strategy merged into its default branch plays. |
+| `BALLOT_BLOCK_LABEL` | `off-ballot` | Proposals with this label aren't shown in the review queue. Only maintainers can label PRs. |
 | `LOBBY_TIMEOUT_SECONDS` | 240 | Give up on a lobby that doesn't start. |
 | `MAX_GAME_MINUTES` | 60 | Leave a match that runs longer. |
 | `SPECTATE_AFTER_DEATH_SECONDS` | 20 | |
