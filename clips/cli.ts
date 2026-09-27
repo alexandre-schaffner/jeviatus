@@ -16,14 +16,17 @@
 //   --env-from <file>   read TYPESAFE_API_KEY (and nothing else) from this .env
 //   --no-jev            pick moments without Jev calls
 //   --dry-run           plan, render nothing
+//   --refresh-text      rewrite every clip's post text from its sidecar's facts
+//                       (after editing clips/metadata.ts), render nothing
 //   --watch             keep going
 
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { JevClient } from "../harness/jev/client";
 import { bandLines } from "../stream/encoder";
 import { defaultFont } from "../tiktok/make";
+import { type Sidecar, sidecar } from "./metadata";
 import { Pipeline } from "./pipeline";
 
 const { values } = parseArgs({
@@ -38,6 +41,7 @@ const { values } = parseArgs({
     "env-from": { type: "string" },
     "no-jev": { type: "boolean", default: false },
     "dry-run": { type: "boolean", default: false },
+    "refresh-text": { type: "boolean", default: false },
     watch: { type: "boolean", default: false },
   },
 });
@@ -48,6 +52,19 @@ const log = (line: string) => console.log(`${stamp()} ${line}`);
 const home = process.env.HOME ?? "";
 const data = values.data ?? process.env.STREAM_DATA_DIR ?? (process.platform === "darwin" ? path.join(home, "Library/Application Support/jeviatus") : "/data");
 const out = values.out ?? path.join(data, "clips");
+if (values["refresh-text"]) {
+  let n = 0;
+  for (const day of readdirSync(out).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))) {
+    for (const file of readdirSync(path.join(out, day)).filter((f) => f.endsWith(".json"))) {
+      const full = path.join(out, day, file);
+      const old = JSON.parse(readFileSync(full, "utf8")) as Sidecar;
+      writeFileSync(full, `${JSON.stringify(sidecar(old.facts, old.video, old.createdAt), null, 2)}\n`);
+      n++;
+    }
+  }
+  log(`rewrote the post text of ${n} clip(s) in ${out}`);
+  process.exit(0);
+}
 const font = defaultFont();
 if (!font) {
   console.error("no caption font found; set TIKTOK_FONT");

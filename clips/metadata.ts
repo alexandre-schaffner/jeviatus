@@ -137,14 +137,29 @@ const sentence = (s: string) => (/[.!?…]$/.test(s) ? s : `${s}.`);
 const pct = (x: number) => `${Math.round(x * 1000) / 10}%`;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-// The one-line "what is this" every post needs: viewers have never heard of Jev.
+// The "what is this" every post needs: viewers have never heard of Jev, and
+// "an AI" makes them picture a chatbot. Jev is TypeSafe's System One model:
+// it answers typed questions with probabilities, it doesn't write text.
 function who(f: ClipFacts): string {
   const lobby = f.humans ? `${f.humans}-player` : "public";
   return pickFrom(
     [
-      `Jev is an AI playing OpenFront (openfront.io) in real ${lobby} lobbies against real people, live 24/7.`,
-      `Jev is an AI that plays public OpenFront matches against humans, streamed live around the clock.`,
-      `An AI (Jev) plays OpenFront against real players 24/7 on stream, and rewrites its own decision code between games.`,
+      `That's Jev playing, TypeSafe's System One model. It doesn't chat or write anything: it reads the game state, answers plain-English questions (attack who? how many troops?) with probabilities in a split second, and code turns the answers into moves. Real ${lobby} OpenFront lobbies (openfront.io) against real people, live 24/7.`,
+      `Every move here is Jev's, a System One model by TypeSafe. No chatbot, no text: Jev answers typed questions about the game with probabilities. It plays real ${lobby} OpenFront lobbies (openfront.io) against humans, streamed 24/7.`,
+      `Jev is TypeSafe's System One model: fast, intuitive calls instead of long reasoning. It answers questions about the game state with probabilities, and the bot plays whatever it picks. Here it's in real ${lobby} OpenFront lobbies (openfront.io) against real people, live around the clock.`,
+    ],
+    f.id,
+    "who",
+  ) + (f.kind === "evolution" ? "" : " The bars at the bottom are its actual probabilities.");
+}
+
+// The same, short enough for X next to a headline.
+function whoShort(f: ClipFacts): string {
+  return pickFrom(
+    [
+      "That's Jev playing, TypeSafe's System One model. It doesn't write text: it answers questions about the game with probabilities, and code turns them into moves. Real OpenFront lobbies, real people.",
+      "Every move is Jev's, a System One model by TypeSafe: typed questions in, probabilities out, no chatbot. Playing real OpenFront lobbies against humans.",
+      "Jev, TypeSafe's System One model, plays real OpenFront lobbies vs people. No text, no chat: it answers questions about the game with probabilities.",
     ],
     f.id,
     "who",
@@ -233,9 +248,10 @@ export function sidecar(f: ClipFacts, video: string, createdAt: string): Sidecar
 
   // X: 280 characters, and no link: X bills a post with a URL ~13x a plain
   // one (2026 pay-per-use), so the stream goes by name (and in the bio).
+  // The headline gives way before the explanation of Jev does.
   const xTags = ttTags.slice(0, 2).join(" ");
-  const xTail = `\n\nLive on Kick: jeviatus\n${xTags}`;
-  const x = { text: `${truncate(`${t} 🤖 ${who(f).replace(/ \(openfront\.io\)/, "")}`, 280 - xTail.length)}${xTail}` };
+  const xTail = ` 🤖\n\n${whoShort(f)}\n\nLive on Kick: jeviatus\n${xTags}`;
+  const x = { text: `${truncate(t, 280 - xTail.length)}${xTail}` };
 
   const fits = SUBREDDITS.filter((s) => s.kinds.includes(f.kind));
   const posts = fits.map((s): RedditPost => ({ subreddit: s.name, title: redditTitle(f, s), flair: s.flair, rules: s.rules }));

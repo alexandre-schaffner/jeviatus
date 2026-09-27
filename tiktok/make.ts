@@ -205,7 +205,7 @@ export function caption(g: GameTrace, picks: Pick[]): string {
   return [
     `${best.phrase} 🤖`,
     "",
-    `Jev is an AI playing OpenFront against real people, live 24/7.${g.map ? ` Map: ${g.map}.` : ""}${g.strategy ? ` Strategy by a viewer: "${g.strategy}".` : ""}`,
+    `That's Jev playing, TypeSafe's System One model. It doesn't chat or write text: it answers questions about the game with probabilities, and code turns them into moves. The bars at the bottom are its actual numbers. Real OpenFront lobbies against real people, live 24/7.${g.map ? ` Map: ${g.map}.` : ""}${g.strategy ? ` Strategy by a viewer: "${g.strategy}".` : ""}`,
     "",
     "#openfront #ai #gaming #strategygames #aigaming #jev",
   ].join("\n");
