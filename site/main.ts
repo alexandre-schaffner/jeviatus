@@ -193,13 +193,15 @@ async function renderGovernance(): Promise<void> {
   const spaceLink = $<HTMLAnchorElement>("[data-space-link]");
   const forumLink = $<HTMLAnchorElement>("[data-forum-link]");
   const note = (text: string, action = "") => `<p class="govern-empty">${text}</p>${action}`;
+  // A column that isn't live says so where its link would be.
+  const notLive = (link: HTMLAnchorElement | null) => link?.replaceWith(Object.assign(document.createElement("span"), { className: "govern-status", textContent: "not live yet" }));
   if (ballot) {
     if (!readSpace) {
       ballot.innerHTML = note(
         "Voting opens once the Jeviatus space is live on Snapshot. Proposals written in the editor will be voted on here.",
         `<a class="btn btn-ghost btn-small" href="${editor()}">Draft a proposal</a>`,
       );
-      spaceLink?.remove();
+      notLive(spaceLink);
     } else {
       if (spaceLink) spaceLink.href = spaceUrl(readSpace);
       ballot.innerHTML = `<p class="govern-empty">Loading proposals…</p>`;
@@ -216,7 +218,7 @@ async function renderGovernance(): Promise<void> {
   if (topics) {
     if (!forumLive) {
       topics.innerHTML = note("The strategy forum isn't open yet. Until then, you can copy a draft from the editor and share it anywhere.");
-      forumLink?.remove();
+      notLive(forumLink);
     } else {
       if (forumLink) forumLink.href = categoryUrl();
       try {
@@ -309,7 +311,8 @@ function heroMotion(): void {
   // The map tilts away like a table as the page moves on.
   gsap
     .timeline({ scrollTrigger: { trigger: ".hero", start: "top top", end: "bottom top", scrub: true } })
-    .to("[data-hero-map]", { rotateX: 42, scale: 1.2, yPercent: 8, filter: "brightness(0.45)", ease: "none" }, 0)
+    // From an explicit brightness(1): tweening from the default `none` starts at brightness(0).
+    .fromTo("[data-hero-map]", { filter: "brightness(1)" }, { rotateX: 42, scale: 1.2, yPercent: 8, filter: "brightness(0.45)", ease: "none" }, 0)
     .to(".hero-copy", { yPercent: -35, opacity: 0, ease: "none" }, 0)
     .to("[data-hud]", { y: -60, opacity: 0, ease: "none" }, 0);
 }
@@ -359,6 +362,9 @@ function treeMotion(svg: SVGSVGElement): void {
     3: [400, 30, 420, 400],
     4: [640, 30, 380, 400],
     5: [820, 30, 460, 520],
+    // The whole graph is illegible at phone width: end on gate, act and the side decisions beside it.
+    6: [740, 200, 540, 480],
+    0: [740, 200, 540, 480],
   };
   const camera = (s: Stage | 0) => {
     const box = mobile.matches && MOBILE[s] ? MOBILE[s] : CAMERA[s];
@@ -373,13 +379,19 @@ function treeMotion(svg: SVGSVGElement): void {
   gsap.set($$(".bar", svg), { attr: { width: 0 } });
   const tl = gsap.timeline({ defaults: { ease: "power2.inOut" } });
   tl.set(svg, { attr: { viewBox: () => camera(1) } }, 0);
-  for (const s of [1, 2, 3, 4, 5, 6] as Stage[]) {
+  // Stage 1 is on screen before the stages start scrolling, so it draws as
+  // the figure arrives rather than leaving an empty frame beside step 1.
+  gsap
+    .timeline({ scrollTrigger: { trigger: svg, start: "top 80%" } })
+    .to($$('.edge[data-stage="1"]', svg), { drawSVG: "100%", duration: 0.9, ease: "power2.inOut" }, 0.15)
+    .to($$('.node[data-stage="1"]', svg), { opacity: 1, y: 0, duration: 0.8, stagger: 0.12, ease: "expo.out" }, 0);
+  for (const s of [2, 3, 4, 5, 6] as Stage[]) {
     const at = s - 1;
     const edges = $$<SVGPathElement>(`.edge[data-stage="${s}"]`, svg);
     const solid = edges.filter((e) => !e.classList.contains("dashed"));
     const dashed = edges.filter((e) => e.classList.contains("dashed"));
     const nodes = $$<SVGGElement>(`.node[data-stage="${s}"], .note[data-stage="${s}"]`, svg);
-    if (s > 1) tl.to(svg, { attr: { viewBox: () => camera(s) }, duration: 0.55 }, at);
+    tl.to(svg, { attr: { viewBox: () => camera(s) }, duration: 0.55 }, at);
     tl.to(solid, { drawSVG: "100%", duration: 0.45, stagger: 0.02, ease: "power1.inOut" }, at + 0.05);
     if (dashed.length) tl.to(dashed, { opacity: 1, duration: 0.3 }, at + 0.1);
     tl.to(nodes, { opacity: 1, y: 0, duration: 0.35, stagger: 0.02, ease: "expo.out" }, at + 0.25);
@@ -432,7 +444,14 @@ function leverMotion(): void {
       // keys off the section entering instead of the horizontal scroll.
       const trigger = (start: string) =>
         i === 0 ? { trigger: ".levers", start: "top 40%" } : { trigger: lever, containerAnimation: scroll, start };
-      gsap.from($$(":scope > .lever-num, :scope > h3, :scope > p", lever), {
+      gsap.from($$(".cost-meter .on", lever), {
+        scaleY: 0,
+        stagger: 0.08,
+        duration: 0.8,
+        ease: "expo.out",
+        scrollTrigger: trigger("left 85%"),
+      });
+      gsap.from($$(":scope > h3, :scope > p", lever), {
         opacity: 0,
         y: 30,
         fontVariationSettings: '"wdth" 150',
