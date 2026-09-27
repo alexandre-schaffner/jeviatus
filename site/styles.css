@@ -1037,12 +1037,45 @@ pre {
     transform: translateX(6px);
   }
 }
-.lever > .lever-num {
-  font-size: clamp(5rem, 11vw, 9rem);
-  font-weight: 900;
-  line-height: 0.8;
-  color: var(--jev);
-  font-variation-settings: "wdth" 60;
+/* How heavy a lever is: four rising blocks, filled up to its weight. */
+.lever > .lever-cost {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  max-width: none;
+  margin-bottom: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.cost-meter {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+}
+.cost-meter i {
+  width: clamp(0.8rem, 1.4vw, 1.1rem);
+  border: 1px solid var(--line-strong);
+  transform-origin: 50% 100%;
+}
+.cost-meter i:nth-child(1) {
+  height: clamp(1.2rem, 2vw, 1.6rem);
+}
+.cost-meter i:nth-child(2) {
+  height: clamp(2rem, 3.4vw, 2.7rem);
+}
+.cost-meter i:nth-child(3) {
+  height: clamp(2.8rem, 4.8vw, 3.8rem);
+}
+.cost-meter i:nth-child(4) {
+  height: clamp(3.6rem, 6.2vw, 4.9rem);
+}
+.cost-meter i.on {
+  border-color: var(--jev);
+  background: var(--jev);
+}
+.cost-who {
+  padding-bottom: 0.1rem;
 }
 .lever h3 {
   font-size: clamp(2rem, 3.4vw, 3rem);
@@ -1197,6 +1230,32 @@ pre {
   line-height: 0.92;
   font-variation-settings: "wdth" 100;
 }
+.cta-act {
+  display: grid;
+  gap: 1.75rem;
+}
+.cta-lede {
+  max-width: 30rem;
+  color: oklch(1 0 0 / 0.86);
+  font-size: 1.15rem;
+}
+@media (min-width: 1100px) {
+  .cta {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 44rem);
+    column-gap: clamp(3rem, 6vw, 6rem);
+    align-items: end;
+  }
+  .cta h2 {
+    grid-column: 1 / -1;
+  }
+  .cta-code {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .cta-act {
+    grid-row: 2;
+  }
+}
 .cta-code {
   width: min(46rem, 100%);
   border-radius: 4px;
@@ -1267,6 +1326,15 @@ pre {
 .govern-col h3 {
   font-size: 1.4rem;
   font-variation-settings: "wdth" 108;
+}
+.govern-status {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
 }
 .govern-more {
   font-family: var(--mono);
@@ -1555,6 +1623,26 @@ pre {
     height: 2.2rem;
   }
   .brand-dao {
+    display: none;
+  }
+}
+
+/* Without motion the levers aren't pinned into a horizontal scroll, so
+   they wrap into a grid instead of running off the edge of the screen. */
+@media (prefers-reduced-motion: reduce) and (min-width: 961px) {
+  .levers-track {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(36rem, 100%), 1fr));
+    width: auto;
+  }
+  .lever,
+  .lever-intro {
+    width: auto;
+    min-height: 0;
+    padding: 4.5rem var(--pad);
+    border-bottom: 1px solid var(--line);
+  }
+  .lever-hint {
     display: none;
   }
 }

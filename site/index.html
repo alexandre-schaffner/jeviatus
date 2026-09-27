@@ -160,7 +160,7 @@
         </header>
 
         <article class="lever">
-          <p class="lever-num" aria-hidden="true">1</p>
+          <p class="lever-cost"><span class="cost-meter" role="img" aria-label="Weight 1 of 4: plain English, no code"><i class="on"></i><i></i><i></i><i></i></span><span class="cost-who">Anyone, in the editor</span></p>
           <h3>A hint</h3>
           <p>Add or reword one of the hints Jev weighs. You write it in plain English in the <a href="./editor">editor</a>, with nothing to install or compile.</p>
           <div class="diff" role="img" aria-label="Example diff adding a consider line to questions.ts">
@@ -172,7 +172,7 @@
         </article>
 
         <article class="lever">
-          <p class="lever-num" aria-hidden="true">2</p>
+          <p class="lever-cost"><span class="cost-meter" role="img" aria-label="Weight 2 of 4: one field of code"><i class="on"></i><i class="on"></i><i></i><i></i></span><span class="cost-who">Developer · questions.ts</span></p>
           <h3>A fact</h3>
           <p>If Jev keeps misjudging something, it may not be able to see it. Add a field to the state it reads, then point a hint at it.</p>
           <div class="diff" role="img" aria-label="Example diff adding a field to the player summary">
@@ -186,7 +186,7 @@
         </article>
 
         <article class="lever">
-          <p class="lever-num" aria-hidden="true">3</p>
+          <p class="lever-cost"><span class="cost-meter" role="img" aria-label="Weight 3 of 4: a code guard"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span><span class="cost-who">Developer · pipeline.ts</span></p>
           <h3>A guard</h3>
           <p>Some calls shouldn't be left to the model. Code already keeps troops home and sizes finishing blows; add a guard when a mistake is costly and easy to detect.</p>
           <div class="diff" role="img" aria-label="Example diff lowering a finishing cap in pipeline.ts">
@@ -198,7 +198,7 @@
         </article>
 
         <article class="lever">
-          <p class="lever-num" aria-hidden="true">4</p>
+          <p class="lever-cost"><span class="cost-meter" role="img" aria-label="Weight 4 of 4: a new question and the code that acts on it"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="cost-who">Developer · questions.ts + pipeline.ts</span></p>
           <h3>A question</h3>
           <p>When a decision deserves its own judgment, give it one: a new choice, score or yes/no question in Call A, and the code that acts on the answer.</p>
           <div class="diff" role="img" aria-label="Example diff adding a new yes or no question">
@@ -220,7 +220,7 @@
       <ol class="timeline" data-timeline>
         <li>
           <h3>Watch a game</h3>
-          <p>Follow Jev in a match. The live overlay shows every step: the route it picked, how sure it was, and why it held back.</p>
+          <p>Run Jev in a private lobby with the <a href="https://github.com/alexandre-schaffner/jeviatus/tree/main/extension">browser extension</a>. Its panel shows every step: the route it picked, how sure it was, and why it held back.</p>
         </li>
         <li>
           <h3>Rewrite a hint</h3>
@@ -249,7 +249,7 @@
     <section class="govern" id="govern" aria-labelledby="govern-title">
       <header class="section-head">
         <h2 id="govern-title">What the DAO is deciding</h2>
-        <p>Live from the Jeviatus space on Snapshot and the strategy forum.</p>
+        <p>Read from the Jeviatus space on Snapshot and the strategy forum each time this page loads.</p>
       </header>
       <div class="govern-grid">
         <div class="govern-col">
@@ -278,9 +278,12 @@
   <span class="typed" data-typed></span><span class="caret"></span>
 ]</code></pre>
       </div>
-      <div class="cta-row">
-        <a class="btn btn-light" href="./editor">Open the editor</a>
-        <a class="btn btn-outline" data-repo href="https://github.com/alexandre-schaffner/jeviatus">Read the source<span class="arrow" aria-hidden="true">↗</span></a>
+      <div class="cta-act">
+        <p class="cta-lede">Pick the decision that went wrong, write what Jev should weigh, and the editor turns it into a proposal.</p>
+        <div class="cta-row">
+          <a class="btn btn-light" href="./editor">Open the editor</a>
+          <a class="btn btn-outline" data-repo href="https://github.com/alexandre-schaffner/jeviatus">Read the source<span class="arrow" aria-hidden="true">↗</span></a>
+        </div>
       </div>
     </section>
   </main>
