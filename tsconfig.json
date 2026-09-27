@@ -27,6 +27,8 @@
     "governance/**/*",
     "tests/**/*",
     "tiktok/**/*",
+    "clips/**/*",
+    "social/**/*",
     "vendor/OpenFrontIO/src/client/vite-env.d.ts"
   ]
 }
