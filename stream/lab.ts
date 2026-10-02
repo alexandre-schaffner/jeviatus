@@ -5,9 +5,9 @@
 //   1. analyze Jev's recent games (the same report as `bun run analyze`);
 //   2. once a change has enough games of its own, judge it against the build
 //      before it: keep it as the new baseline, or drop it;
-//   3. ask Claude Code, headless, for one change to Jev's decision system,
+//   3. ask Claude Code, headless, for one change to Jev, anywhere in the repo,
 //      its reads, edits and reasoning scrolling by in the terminal;
-//   4. typecheck and test it (one fix-up round if they fail);
+//   4. typecheck, test and build it (one fix-up round if they fail);
 //   5. commit it on a local branch, build the extension from it and restart
 //      the browser, so the next games play on it.
 //
@@ -23,7 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { type GameRecord, findTraces, parseTrace } from "../harness/analyze/load";
 import { aggregate, buildReport, gameRow, renderMoment, renderReport } from "../harness/analyze/report";
-import { comparisonMarkdown, gamesFor, isBetter, measure, outsideAllowlist } from "../harness/improve/measure";
+import { comparisonMarkdown, gamesFor, isBetter, measure, offLimits } from "../harness/improve/measure";
 import { checkCitations, describeProblems, type GroundingResult, parseCitations, referenceTexts } from "../harness/improve/grounding";
 import { ANALYSIS_DIR, changePrompt, type PastAttempt, parseProposal, PROPOSAL_FILE } from "../harness/improve/prompt";
 import { REFERENCES_DIR } from "../harness/improve/references";
@@ -76,8 +76,9 @@ interface LabState {
 // The lab's commits are machine-made and local: never signed.
 const UNSIGNED = ["-c", "commit.gpgsign=false"];
 
-// Claude Code's tools: read and edit, run typecheck and tests, look at git. Nothing else.
-const TOOLS = "Read,Edit,Write,Glob,Grep,Bash(bun run typecheck),Bash(bun test:*),Bash(git diff:*),Bash(git status:*)";
+// Claude Code's tools: read and edit, run typecheck, tests and the extension
+// build, look at git. Nothing else.
+const TOOLS = "Read,Edit,Write,Glob,Grep,Bash(bun run typecheck),Bash(bun test:*),Bash(bun run build:extension),Bash(git diff:*),Bash(git status:*)";
 // Never handed to Claude Code, whatever it runs.
 const SECRET_ENV = /KEY|TOKEN|SECRET|PASSWORD|STREAM_URL|WALLET|MINT/i;
 
@@ -470,7 +471,12 @@ export class Lab {
     const t = await this.sh(["bash", "-c", "bun test tests/*.test.ts"], { cwd: this.wt, allowFail: true });
     const summary = t.out.split("\n").filter((l) => /^\s*\d+ (pass|fail)$/.test(l));
     for (const l of summary) studio.line(/fail/.test(l) && !/ 0 fail/.test(l) ? "err" : "ok", `  ${l.trim()}`);
-    return t;
+    if (!t.ok) return t;
+    // The change may touch the extension itself: it must still build before it ships.
+    studio.line("tool", "$ bun run build:extension");
+    const b = await this.sh(["bun", "run", "build:extension"], { cwd: this.wt, allowFail: true });
+    studio.line(b.ok ? "ok" : "err", b.ok ? "  extension builds" : `  ${b.out.split("\n").filter(Boolean).at(-1) ?? "build failed"}`);
+    return b;
   }
 
   private async changedFiles(): Promise<string[]> {
@@ -482,7 +488,7 @@ export class Lab {
 
   private async discard(): Promise<void> {
     await this.sh(["git", "checkout", "--quiet", "--force", "--", "."], { cwd: this.wt, allowFail: true });
-    await this.sh(["git", "clean", "-fdq", "--", "harness", "tests"], { cwd: this.wt, allowFail: true });
+    await this.sh(["git", "clean", "-fdq", "--", ".", ":!vendor", ":!node_modules"], { cwd: this.wt, allowFail: true });
     this.link();
   }
 
@@ -550,8 +556,8 @@ export class Lab {
         ? null
         : files.length === 0
           ? "no files changed"
-          : outsideAllowlist(files).length
-            ? `changed files outside the decision system: ${outsideAllowlist(files).join(", ")}`
+          : offLimits(files).length
+            ? `changed OpenFront itself: ${offLimits(files).join(", ")}`
             : !check.ok
               ? "typecheck/tests still fail"
               : !grounding?.grounded

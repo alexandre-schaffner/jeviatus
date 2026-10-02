@@ -78,9 +78,13 @@ export function comparisonMarkdown(baseline: BuildResult, candidate: BuildResult
   ].join("\n");
 }
 
-// Where the loop's LLM may change code: the decision system and its tests.
-export const ALLOWED_PATHS = ["harness/decide/", "harness/observe/", "harness/strategy/", "harness/act/", "tests/"];
+// The loop's LLM may change anything in the repo but OpenFront itself: it is
+// pinned to the commit openfront.io runs, and the wire format and simulation
+// must match the live server's.
+export const OFF_LIMITS = ["vendor/", ".gitmodules"];
+// What the extension bundles: the only code the next games play on.
+export const LIVE_PATHS = ["harness/", "extension/"];
 
-export function outsideAllowlist(files: string[]): string[] {
-  return files.filter((f) => !ALLOWED_PATHS.some((p) => f.startsWith(p)));
+export function offLimits(files: string[]): string[] {
+  return files.filter((f) => OFF_LIMITS.some((p) => f === p || f.startsWith(p)));
 }

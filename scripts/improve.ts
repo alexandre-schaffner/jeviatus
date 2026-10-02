@@ -28,7 +28,7 @@ import { parseArgs } from "node:util";
 import { type GameRecord, findTraces, parseTrace } from "../harness/analyze/load";
 import { buildReport, renderMoment, renderReport } from "../harness/analyze/report";
 import { loadConfig } from "../harness/config";
-import { type BuildResult, comparisonMarkdown, gamesFor, isBetter, measure, outsideAllowlist } from "../harness/improve/measure";
+import { type BuildResult, comparisonMarkdown, gamesFor, isBetter, measure, offLimits } from "../harness/improve/measure";
 import { ANALYSIS_DIR, changePrompt, type PastAttempt, parseProposal, PROPOSAL_FILE, type Proposal } from "../harness/improve/prompt";
 
 const { values } = parseArgs({
@@ -241,8 +241,8 @@ async function propose(n: number, from: Build, baseGames: GameRecord[], past: Pa
     return { kind: "none", reason: proposal.body };
   }
   if (files.length === 0) return fail("no files changed");
-  const outside = outsideAllowlist(files);
-  if (outside.length > 0) return fail(`changed files outside the decision system: ${outside.join(", ")}`);
+  const outside = offLimits(files);
+  if (outside.length > 0) return fail(`changed OpenFront itself: ${outside.join(", ")}`);
   if (!check.ok) return fail(`typecheck/tests still fail:\n${check.out.slice(-1500)}`);
 
   await sh(["git", "add", "--", ...files], { cwd: wt });

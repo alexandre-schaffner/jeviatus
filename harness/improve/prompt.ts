@@ -1,7 +1,7 @@
 // The instructions for the headless Claude Code run that proposes one change
-// to Jev's decision system from the analysis of its recent games.
+// to Jev, anywhere in the repo, from the analysis of its recent games.
 
-import { ALLOWED_PATHS } from "./measure";
+import { LIVE_PATHS, OFF_LIMITS } from "./measure";
 
 export const PROPOSAL_FILE = ".loop/proposal.md";
 export const ANALYSIS_DIR = ".loop/analysis";
@@ -36,24 +36,23 @@ Jev played ${opts.games} real games on commit ${opts.commit.slice(0, 12)}. The a
 - ${ANALYSIS_DIR}/report.md: per-game table, aggregates, and recurring bad and good patterns with evidence (game, tick, minute).
 - ${ANALYSIS_DIR}/moments/*.md: the biggest land collapses and gains, each with the three decision steps leading in (state Jev saw, every answer with probabilities, intents sent, outcome).
 
-How Jev decides (read before changing anything):
+How Jev decides (a map, not a fence):
 - harness/observe/state.ts builds the JSON state Jev sees each step.
 - harness/decide/questions.ts holds the questions and "consider" hints Jev answers (route, goal, targets, commits).
 - harness/decide/pipeline.ts turns answers into actions, with deterministic guards (confidence gate, fallbacks, troop reserve).
 - harness/decide/candidates.ts decides which options exist at all.
 - harness/strategy/stage.ts splits the game into early, mid and late (\`game.stage\`; each moment's decision line names it). Hints that only hold at one stage go in that stage's \`forStage\` list in questions.ts; harness/decide/playbook.ts holds the per-stage troop reserve and the structures not offered yet.
+- harness/agent.ts runs the step loop (cadence, memory, sending intents); extension/ runs the agent inside the real openfront.io page.
 
-Your task: pick the ONE recurring bad pattern with the strongest evidence, confirm it in the moment dumps, and make the lightest change that should fix it. In order of preference:
-1. a new or reworded hint in harness/decide/questions.ts, in a stage's list when the pattern only shows at one stage;
-2. a state field in harness/observe/state.ts so Jev can see what it is missing;
-3. a deterministic guard in harness/decide/pipeline.ts next to the existing hold and fallback logic;
-4. a new question layer (for example a yes/no gate before the route).
+Your task: pick the ONE recurring bad pattern with the strongest evidence, confirm it in the moment dumps, and make the change you believe fixes it best. Nothing is off the table: a hint, a state field, a guard, a new question layer, a rewritten pipeline, a new module, a different agent loop, a change to how the extension acts in the page. Pick what the evidence calls for, not what is smallest.
 
 Rules:
-- Change only files under: ${ALLOWED_PATHS.join(", ")}. Match the surrounding style and comment density.
-- One focused change. No refactors, no unrelated fixes.
-- A deterministic guard needs a test in tests/.
-- Run \`bun run typecheck\` and \`bun test tests/*.test.ts\`; both must pass.
+- You may change any file in the repo except ${OFF_LIMITS.join(" and ")} (OpenFront itself, pinned to the commit the live server runs). Match the surrounding style and comment density.
+- Only code the extension bundles (${LIVE_PATHS.join(", ")}) plays in the next games, and those games are what judge your change. Edits elsewhere are fine when the change needs them, but they are not measured.
+- One idea per change, however large: the next games judge it as a whole, so unrelated fixes muddy the verdict.
+- No new dependencies: package installs don't reach the live build.
+- New or changed logic in code needs a test in tests/.
+- Run \`bun run typecheck\`, \`bun test tests/*.test.ts\` and \`bun run build:extension\`; all three must pass.
 - Do not commit. Do not touch git.
 - Do not repeat an idea that was already tried and did not help.
 ${opts.references ? `\n${groundingRules(opts.references)}\n` : ""}

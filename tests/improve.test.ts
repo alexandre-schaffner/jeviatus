@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { GameRecord } from "../harness/analyze/load";
-import { comparisonMarkdown, gamesFor, isBetter, measure, outsideAllowlist } from "../harness/improve/measure";
+import { comparisonMarkdown, gamesFor, isBetter, measure, offLimits } from "../harness/improve/measure";
 import { changePrompt, parseProposal } from "../harness/improve/prompt";
 
 const A = "a".repeat(40);
@@ -54,9 +54,9 @@ describe("comparing builds", () => {
   });
 });
 
-test("the LLM may only touch the decision system and tests", () => {
-  expect(outsideAllowlist(["harness/decide/questions.ts", "tests/new.test.ts", "harness/observe/state.ts"])).toEqual([]);
-  expect(outsideAllowlist(["harness/agent.ts", "package.json", "extension/src/content.ts"])).toEqual(["harness/agent.ts", "package.json", "extension/src/content.ts"]);
+test("the LLM may touch anything but OpenFront itself", () => {
+  expect(offLimits(["harness/decide/questions.ts", "harness/agent.ts", "extension/src/content.ts", "package.json", "stream/lab.ts"])).toEqual([]);
+  expect(offLimits(["vendor/OpenFrontIO", "vendor/OpenFrontIO/src/core/game/Game.ts", ".gitmodules", "vendorPatches.ts"])).toEqual(["vendor/OpenFrontIO", "vendor/OpenFrontIO/src/core/game/Game.ts", ".gitmodules"]);
 });
 
 describe("the proposal", () => {

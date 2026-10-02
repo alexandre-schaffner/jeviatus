@@ -64,7 +64,7 @@ Every 2 games (`STREAM_LAB_EVERY_GAMES`), the stream cuts to Jev's lab. That's a
 
 1. Analyze the recent games (the same report as `bun run analyze`).
 2. Once the build under test has 4 games of its own (`STREAM_LAB_GAMES_PER_BUILD`), judge it against the build before it. A better build becomes the new baseline; a worse one is dropped.
-3. Ask Claude Code (`claude -p`) for one change to Jev's decision system. Viewers watch it read the analysis and the code, and see its edits as diffs.
+3. Ask Claude Code (`claude -p`) for one change to Jev, anywhere in the repo but the vendored OpenFront. Viewers watch it read the analysis and the code, and see its edits as diffs.
 4. Typecheck and test it, and check its grounding (below), with one fix-up round if either fails.
 5. Commit it on a local `jev-lab/…` branch, build the extension from it, and restart the browser, so the next games play on it.
 
