@@ -4,7 +4,7 @@
 // until the visitor opens the forum or signs a proposal.
 
 import { applyPatch, cleanText, type Edit, LIMITS, type Patch, proposalBody, validatePatch, APP, lineDiff } from "../governance/patch";
-import type { PromptNode } from "../governance/prompts";
+import { type PromptNode, stageLabel } from "../governance/prompts";
 import { forumLive, GOV, latestBlock, newTopicUrl, proposalUrl, spaceInfo, votingLive } from "./gov.ts";
 import { promptFile, source } from "./source.ts" with { type: "macro" };
 import { renderTree } from "./tree.ts";
@@ -207,7 +207,8 @@ function renderEditor(): void {
           ? `<p class="ed-hint-text">${rich(orig!.text)}</p>`
           : `<textarea class="ed-hint-text" rows="1" maxlength="${LIMITS.hint}" data-hint="${h.key}" aria-label="Hint ${label}">${esc(h.text)}</textarea>`;
       const tag = state === "is-new" ? "New" : state === "is-changed" ? "Changed" : state === "is-removed" ? "Removed" : "";
-      return `<li class="ed-hint ${state}"><span class="ed-hint-num" aria-hidden="true">${label}</span>${field}<div class="ed-hint-meta">${tag ? `<span class="ed-tag">${tag}</span>` : ""}${actions}</div></li>`;
+      const stage = orig?.stage ? `<span class="ed-tag ed-stage">${esc(stageLabel(orig.stage))} only</span>` : "";
+      return `<li class="ed-hint ${state}"><span class="ed-hint-num" aria-hidden="true">${label}</span>${field}<div class="ed-hint-meta">${stage}${tag ? `<span class="ed-tag">${tag}</span>` : ""}${actions}</div></li>`;
     })
     .join("");
   const also = [p.premise, p.context, p.rules].filter(Boolean) as string[];
@@ -267,7 +268,11 @@ editorRoot.addEventListener("click", (e) => {
   const d = touch(selected);
   if (b.dataset.action === "add-hint") {
     const key = `n${Date.now().toString(36)}`;
-    d.hints.push({ key, text: "" });
+    // New hints go with the ones Jev reads at every stage, ahead of the
+    // stage-only lists, so they anchor to a hint that applies all game.
+    const base = FILE.prompts[selected].hints;
+    const staged = d.hints.findIndex((x) => x.base !== undefined && base[x.base].stage !== undefined);
+    d.hints.splice(staged < 0 ? d.hints.length : staged, 0, { key, text: "" });
     renderEditor();
     $<HTMLTextAreaElement>(`[data-hint="${key}"]`, editorRoot)?.focus();
     return;

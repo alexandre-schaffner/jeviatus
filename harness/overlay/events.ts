@@ -27,6 +27,7 @@ export interface OverlayEvent {
   confidence: number;
   threshold: number;
   goal: { current: string; dist: Dist | null };
+  stage?: string; // early, mid or late (strategy/stage.ts)
   args: Dist[];
   side: { label: string; p: number; decision: string }[];
   threats: { label: string; score: number }[];
@@ -112,6 +113,7 @@ interface EventContext {
   me: Record<string, unknown>;
   threshold: number;
   goal: string;
+  stage?: string;
   // Display label for an option key: player refs -> names, etc.
   label: (key: string) => string;
   recent: OverlayEvent["recent"];
@@ -175,6 +177,7 @@ export function decisionEvent(ctx: EventContext, d: Decision): OverlayEvent {
     confidence: d.confidence,
     threshold: ctx.threshold,
     goal: { current: ctx.goal, dist: goal },
+    stage: ctx.stage,
     args,
     side,
     threats: threats.sort((a, b) => b.score - a.score),

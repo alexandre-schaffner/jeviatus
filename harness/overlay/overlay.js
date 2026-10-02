@@ -220,7 +220,7 @@ function agentBlock(e) {
   const conf = e.confidence ?? 0;
   const low = conf < e.threshold;
   return `<div class="agent">
-    <div class="row"><span class="name">${agents.size > 1 ? esc(e.agent) : "Last decision"}</span><span class="meta" title="tick ${e.tick}, ${e.latencyMs} ms to decide">${clock(e.minutes)} · ${e.latencyMs} ms</span></div>
+    <div class="row"><span class="name">${agents.size > 1 ? esc(e.agent) : "Last decision"}</span><span class="meta" title="tick ${e.tick}, ${e.latencyMs} ms to decide">${clock(e.minutes)}${e.stage ? ` · ${esc(e.stage)} game` : ""} · ${e.latencyMs} ms</span></div>
     <div class="action">
       <span class="pill ${e.held ? "hold" : ""}">${esc(action.charAt(0).toUpperCase() + action.slice(1))}${target ? ` · ${esc(target)}` : ""}</span>
       ${e.held && e.holdReason ? `<span class="why" title="${esc(e.holdReason)}">${esc(e.holdReason)}</span>` : ""}

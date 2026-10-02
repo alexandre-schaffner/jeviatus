@@ -428,6 +428,10 @@ p.ed-hint-text.is-locked {
   background: oklch(0.91 0.17 108 / 0.14);
   color: var(--citron);
 }
+.ed-hint .ed-tag.ed-stage {
+  background: var(--raise);
+  color: var(--muted);
+}
 .ed-tag.is-removed {
   background: var(--jev-soft);
   color: oklch(0.8 0.12 340);

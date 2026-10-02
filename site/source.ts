@@ -10,7 +10,7 @@ import config from "../governance/config.json";
 import { DEFAULTS } from "../harness/config";
 import { GOALS } from "../harness/strategy/memory";
 import { QUESTIONS_FILE } from "../governance/patch";
-import { parsePromptFile, type PromptFile, sourceFile, stringRecord, unwrap, walk } from "../governance/prompts";
+import { parsePromptFile, type PromptFile, sourceFile, stageLabel, stringRecord, unwrap, walk } from "../governance/prompts";
 
 const ROOT = join(import.meta.dir, "..");
 const read = (file: string) => readFileSync(join(ROOT, file), "utf8");
@@ -88,7 +88,8 @@ export function source(): Source {
       premise: p.premise,
       context: p.context,
       rules: p.rules,
-      consider: p.hints.map((h) => h.text),
+      // Stage hints are read at one stage of the game only: say which.
+      consider: p.hints.map((h) => (h.stage ? `${stageLabel(h.stage)}: ${h.text}` : h.text)),
       levels: p.levels,
       options: p.options,
       line: p.line,

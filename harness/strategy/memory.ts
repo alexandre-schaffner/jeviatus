@@ -2,6 +2,8 @@
 // remembered by the agent (goals, grudges, threat judgments, what its own
 // actions achieved); observed facts come fresh from the sim each step.
 
+import { detectStage, laterStage, type Stage, type StageSignals } from "./stage";
+
 export const GOALS = {
   grow_territory: "Grab as much land as possible, mainly unclaimed land, while it lasts",
   build_economy: "Grow income through business: cities, ports and factories on rail, trade with many partners, and allies whose stations pay the most",
@@ -45,6 +47,8 @@ function signed(n: number, unit: string): string {
 export class StrategyMemory {
   goal: Goal = "grow_territory";
   goalSinceTick = 0;
+  stage: Stage = "early";
+  stageSinceTick = 0;
   private pending: { goal: Goal; streak: number } | null = null;
   warTarget: string | null = null;
   readonly grudges = new Map<string, Grudge>();
@@ -76,6 +80,15 @@ export class StrategyMemory {
       return true;
     }
     return false;
+  }
+
+  // The stage only moves forward. Returns true when it advanced.
+  advanceStage(signals: StageSignals, tick: number): boolean {
+    const next = laterStage(this.stage, detectStage(signals));
+    if (next === this.stage) return false;
+    this.stage = next;
+    this.stageSinceTick = tick;
+    return true;
   }
 
   noteMyAttacks(attacks: { id(): string; troops(): number }[]): void {

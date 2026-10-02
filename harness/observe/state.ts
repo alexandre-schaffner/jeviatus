@@ -7,6 +7,7 @@ import { type Game, type Player, PlayerType, Relation, UnitType } from "src/core
 import type { TileRef } from "src/core/game/GameMap";
 import { type Strategy, strategyState } from "../strategy/doctrine";
 import type { StrategyMemory } from "../strategy/memory";
+import { type Stage, STAGES, type StageSignals, stageSignals, winProgress } from "../strategy/stage";
 import { type ConquestEstimate, conquestEstimate } from "./conquest";
 import type { EconomySnapshot } from "./economy";
 import { compass, type Scan } from "./sectors";
@@ -53,6 +54,9 @@ export interface Observation {
   unclaimedBorderTiles: number;
   coastal: boolean;
   myCentroid: { x: number; y: number } | null;
+  // The remembered stage of the game (memory.stage) and what it was read from.
+  stage: Stage;
+  stageSignals: StageSignals;
 }
 
 export interface ObserveInput {
@@ -67,6 +71,8 @@ export interface ObserveInput {
   econ: EconomySnapshot;
   // The viewer-proposed playstyle, if any (strategy/doctrine.ts).
   strategy?: Strategy;
+  // Already measured this step (the agent advances memory.stage with them).
+  stageSignals?: StageSignals;
 }
 
 const RELATION = {
@@ -173,6 +179,7 @@ function scanBorder(game: Game, me: Player): {
 
 export function observe(input: ObserveInput): Observation {
   const { game, me, scan, refs, memory, seaReachable, goldPerMin, econ, strategy } = input;
+  const signals = input.stageSignals ?? stageSignals(game, me);
   const tick = game.ticks();
   const totalLand = Math.max(1, game.numLandTiles());
   const alive = game.players().filter((p) => p.isAlive());
@@ -274,6 +281,7 @@ export function observe(input: ObserveInput): Observation {
     [...ids].map((id) => refOf(id)).filter((r): r is string => r !== undefined);
 
   const inSpawn = game.inSpawnPhase();
+  const leader = signals.leader;
   const state = {
     game: {
       tick,
@@ -281,6 +289,18 @@ export function observe(input: ObserveInput): Observation {
       phase: inSpawn ? "spawn" : "main",
       players_alive: alive.length,
       win_land_share: winShare,
+      stage: `${memory.stage}: ${STAGES[memory.stage]}`,
+      stage_since_min: Math.round((memory.stageSinceTick / 600) * 10) / 10,
+      unclaimed_land_share: r2(signals.unclaimedShare),
+      leader:
+        leader === null
+          ? null
+          : {
+              player: leader === me ? "me" : (refOf(leader.id()) ?? null),
+              name: leader.displayName(),
+              land_share: r4(signals.leaderShare),
+              share_of_land_needed_to_win: r2(winProgress(signals.leaderShare, signals.winShare)),
+            },
     },
     me: {
       name: me.displayName(),
@@ -319,6 +339,8 @@ export function observe(input: ObserveInput): Observation {
     unclaimedBorderTiles: border.counts.get(0) ?? 0,
     coastal: border.coastal,
     myCentroid: myC,
+    stage: memory.stage,
+    stageSignals: signals,
   };
 }
 

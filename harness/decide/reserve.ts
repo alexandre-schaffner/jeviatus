@@ -20,8 +20,9 @@ export interface Reserve {
 }
 
 // Players I'm fighting (or about to) are excluded: their army is busy with
-// mine, and opposing attacks cancel out.
-export function homeReserve(me: Player, obs: Observation, fighting: ReadonlySet<Player>): Reserve {
+// mine, and opposing attacks cancel out. `share` varies with the stage of the
+// game (playbook.ts).
+export function homeReserve(me: Player, obs: Observation, fighting: ReadonlySet<Player>, share = RESERVE_VS_NEIGHBOR): Reserve {
   let strongest: { troops: number; name: string } | null = null;
   for (const o of obs.players) {
     const p = o.player;
@@ -32,7 +33,7 @@ export function homeReserve(me: Player, obs: Observation, fighting: ReadonlySet<
     .incomingAttacks()
     .filter((a) => a.attacker().isAlive())
     .reduce((sum, a) => sum + a.troops(), 0);
-  const vsNeighbor = (strongest?.troops ?? 0) * RESERVE_VS_NEIGHBOR;
+  const vsNeighbor = (strongest?.troops ?? 0) * share;
   if (incoming >= vsNeighbor && incoming > 0) return { troops: incoming, why: "attacks coming at me" };
   if (strongest !== null && vsNeighbor > 0) return { troops: vsNeighbor, why: strongest.name };
   return { troops: 0, why: null };

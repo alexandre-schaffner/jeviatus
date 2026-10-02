@@ -15,6 +15,7 @@ import type { Jev } from "../jev/client";
 import { kindOf, type Observation, type PlayerObs, troopFill, troopStatus } from "../observe/state";
 import type { SectorGrid } from "../observe/sectors";
 import type { StrategyMemory } from "../strategy/memory";
+import { winProgress } from "../strategy/stage";
 import {
   boatSites,
   type BuildOption,
@@ -38,7 +39,8 @@ import {
   type AllianceContext,
 } from "./questions";
 import { nukeSites } from "./nukes";
-import { EXPAND_FLOOR, homeReserve, TroopBudget } from "./reserve";
+import { playbook } from "./playbook";
+import { homeReserve, TroopBudget } from "./reserve";
 
 export interface CallTrace {
   label: string;
@@ -147,9 +149,17 @@ export class Pipeline {
   async step(game: Game, me: Player, obs: Observation, cands: Candidates, memory: StrategyMemory, site: Omit<SiteContext, "threat">): Promise<Decision> {
     const calls: CallTrace[] = [];
     const fronts = new Set(me.outgoingAttacks().map((x) => x.target()).filter((t): t is Player => t.isPlayer()));
-    const shown = homeReserve(me, obs, fronts);
+    const book = playbook(obs.stage, winProgress(obs.stageSignals.myShare, obs.stageSignals.winShare));
+    const shown = homeReserve(me, obs, fronts, book.reserveVsNeighbor);
     (obs.state.me as Record<string, unknown>).troops_kept_home_share = me.troops() > 0 ? Math.round(Math.min(1, shown.troops / me.troops()) * 100) / 100 : 0;
-    const questions = routeQuestions(cands, obs.unclaimedBorderTiles, troopStatus(troopFill(game, me)), allianceContext(me, obs, cands, memory, site.refOf), "strategy" in obs.state);
+    const questions = routeQuestions(
+      cands,
+      obs.unclaimedBorderTiles,
+      troopStatus(troopFill(game, me)),
+      allianceContext(me, obs, cands, memory, site.refOf),
+      "strategy" in obs.state,
+      obs.stage,
+    );
     const a = await this.call("route", obs.state, questions, calls);
     if (a === null) return hold("hold", `route call failed: ${calls.at(-1)?.error ?? "unknown error"}`, calls);
 
@@ -242,10 +252,10 @@ export class Pipeline {
     const mainTarget = main.action !== null && "targetID" in main.action ? main.action.targetID : null;
     const fighting = new Set(fronts);
     for (const id of [mainTarget, ...alsoAttack.map((o) => o.player.id())]) if (id && game.hasPlayer(id)) fighting.add(game.player(id));
-    const reserve = homeReserve(me, obs, fighting);
+    const reserve = homeReserve(me, obs, fighting, book.reserveVsNeighbor);
     const budget = new TroopBudget(me.troops(), reserve.troops);
     if (main.action !== null) {
-      const trimmed = applyBudget(main.action, budget);
+      const trimmed = applyBudget(main.action, budget, book.expandFloor);
       if (trimmed === null) {
         main = { action: null, reason: `keeping troops home${reserve.why ? ` against ${reserve.why}` : ""}` };
       } else if (trimmed.cut && main.record) {
@@ -449,14 +459,14 @@ const BOAT_MAX_FRACTION = 0.3;
 const TRIBE_PUSH = 0.15;
 
 // Trim a troop-spending action to the step's budget. Null: nothing left to send.
-function applyBudget(action: Action, budget: TroopBudget): { share: number; cut: boolean } | null {
+function applyBudget(action: Action, budget: TroopBudget, expandFloor: number): { share: number; cut: boolean } | null {
   const spend = (want: number, floor = 0) => {
     const share = budget.take(want, floor);
     return share <= 0 ? null : { share, cut: share < want - 1e-9 };
   };
   switch (action.kind) {
     case "expand": {
-      const r = spend(action.fraction, EXPAND_FLOOR);
+      const r = spend(action.fraction, expandFloor);
       if (r) action.fraction = r.share;
       return r;
     }

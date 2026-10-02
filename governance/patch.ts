@@ -106,6 +106,7 @@ export function applyPatch(text: string, file: PromptFile, patch: Patch): { text
     if (!p.hintList) return problems.push(`${at}: this question takes no new hints`);
     let pos: number;
     let afterComma = true;
+    let indent = p.hintList.indent;
     if (e.after === -1) {
       if (e.anchor !== null) return problems.push(`${at}: malformed anchor`);
       pos = p.hintList.open;
@@ -116,8 +117,10 @@ export function applyPatch(text: string, file: PromptFile, patch: Patch): { text
       const comma = /^\s*,/.exec(text.slice(h.span.end));
       afterComma = comma !== null;
       pos = comma ? h.span.end + comma[0].length : h.span.end;
+      // After a stage hint, the new one joins that stage's list.
+      indent = h.indent ?? indent;
     }
-    const slot = inserts.get(pos) ?? { indent: p.hintList.indent, afterComma, lines: [] };
+    const slot = inserts.get(pos) ?? { indent, afterComma, lines: [] };
     slot.lines.push(lit(e.to));
     inserts.set(pos, slot);
   });

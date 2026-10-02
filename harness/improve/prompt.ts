@@ -41,9 +41,10 @@ How Jev decides (read before changing anything):
 - harness/decide/questions.ts holds the questions and "consider" hints Jev answers (route, goal, targets, commits).
 - harness/decide/pipeline.ts turns answers into actions, with deterministic guards (confidence gate, fallbacks, troop reserve).
 - harness/decide/candidates.ts decides which options exist at all.
+- harness/strategy/stage.ts splits the game into early, mid and late (\`game.stage\`; each moment's decision line names it). Hints that only hold at one stage go in that stage's \`forStage\` list in questions.ts; harness/decide/playbook.ts holds the per-stage troop reserve and the structures not offered yet.
 
 Your task: pick the ONE recurring bad pattern with the strongest evidence, confirm it in the moment dumps, and make the lightest change that should fix it. In order of preference:
-1. a new or reworded hint in harness/decide/questions.ts;
+1. a new or reworded hint in harness/decide/questions.ts, in a stage's list when the pattern only shows at one stage;
 2. a state field in harness/observe/state.ts so Jev can see what it is missing;
 3. a deterministic guard in harness/decide/pipeline.ts next to the existing hold and fallback logic;
 4. a new question layer (for example a yes/no gate before the route).

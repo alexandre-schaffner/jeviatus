@@ -19,6 +19,7 @@ import { decisionEvent, type OverlayEvent } from "./overlay/events";
 import type { Mirror } from "./sim/mirror";
 import type { Strategy } from "./strategy/doctrine";
 import { StrategyMemory, type Vitals } from "./strategy/memory";
+import { stageSignals } from "./strategy/stage";
 
 export interface AgentOptions {
   name: string;
@@ -152,6 +153,8 @@ export class Agent {
     this.memory.noteMyAttacks(me.outgoingAttacks());
     this.income.update(me, tick);
     const econ = economy(game, me, this.income);
+    const signals = stageSignals(game, me);
+    if (this.memory.advanceStage(signals, tick)) this.log(`stage -> ${this.memory.stage}`);
 
     const scan = this.grid.scan();
     const reach = this.sea.get(game, me, scan);
@@ -165,6 +168,7 @@ export class Agent {
       goldPerMin: this.income.rates.total,
       econ,
       strategy: this.o.strategy,
+      stageSignals: signals,
     });
     const cands = buildCandidates(game, me, obs, reach, econ, this.memory.threat, this.memory.attackPeaks);
     this.stats.peak = Math.max(this.stats.peak, me.numTilesOwned() / Math.max(1, game.numLandTiles()));
@@ -199,7 +203,7 @@ export class Agent {
 
     this.log(
       `${decision.route}${decision.held ? ` HOLD(${decision.holdReason})` : ""} conf=${decision.confidence.toFixed(2)} ` +
-        `goal=${this.memory.goal} -> ${sent.map((s) => s.desc).join("; ") || "no intents"} (${Math.round(ms)}ms)`,
+        `stage=${this.memory.stage} goal=${this.memory.goal} -> ${sent.map((s) => s.desc).join("; ") || "no intents"} (${Math.round(ms)}ms)`,
     );
     this.o.trace?.write({
       type: "step",
@@ -217,7 +221,7 @@ export class Agent {
       decision: { route: decision.route, held: decision.held, holdReason: decision.holdReason, confidence: decision.confidence, used: decision.used, preferences: decision.preferences, record: decision.record },
       calls: decision.calls,
       intents: sent,
-      memory: { goal: this.memory.goal, warTarget: this.memory.warTarget },
+      memory: { goal: this.memory.goal, warTarget: this.memory.warTarget, stage: this.memory.stage },
       latencyMs: Math.round(ms),
     });
     this.publish(decision, (obs.state as { me: Record<string, unknown> }).me, sent, ms, (key) => {
@@ -246,6 +250,7 @@ export class Agent {
           me,
           threshold: this.o.config.minConfidence,
           goal: this.memory.goal,
+          stage: this.game.inSpawnPhase() ? undefined : this.memory.stage,
           label,
           recent: mem.recent_actions.map((r) => ({ ...r, target: nameOfRef(r.target) })),
           intents: sent.map(({ desc, sent, reason }) => ({ desc, sent, reason })),

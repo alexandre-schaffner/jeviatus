@@ -344,7 +344,7 @@ export function renderMoment(m: Moment): string {
       out.push(`- ${p.ref} ${p.name} (${p.kind ?? "?"}): land ${pct(Number(p.land_share ?? 0))}, troops ${p.troops_vs_mine}x mine${tags ? `; ${tags}` : ""}`);
     }
     out.push(
-      `- **decision**: ${s.route}${s.held ? ` HELD (${s.holdReason})` : ""}, conf ${s.confidence.toFixed(2)}, goal ${s.goal ?? "?"}` +
+      `- **decision**: ${s.route}${s.held ? ` HELD (${s.holdReason})` : ""}, conf ${s.confidence.toFixed(2)}, ${s.stage ? `${s.stage} game, ` : ""}goal ${s.goal ?? "?"}` +
         (s.record ? `; recorded ${s.record.action}${s.record.target ? ` → ${s.record.target}` : ""}${s.record.detail ? ` (${s.record.detail})` : ""}` : ""),
     );
     if (s.answers) {

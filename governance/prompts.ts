@@ -16,6 +16,10 @@ export interface Span {
 interface Hint {
   text: string;
   span?: Span; // set when the hint is a plain string literal, so it can be rewritten
+  // Set for hints Jev reads at one stage of the game only (`forStage`), with
+  // the indent of that stage's list, for hints inserted after them.
+  stage?: string;
+  indent?: string;
 }
 
 export interface PromptNode {
@@ -32,6 +36,11 @@ export interface PromptNode {
   hintList?: { open: number; indent: string };
   levels?: string[]; // score answer levels
   options?: Record<string, string>; // fixed choice options
+}
+
+// "early" -> "Early game", for showing a stage hint.
+export function stageLabel(stage: string): string {
+  return `${stage.charAt(0).toUpperCase()}${stage.slice(1)} game`;
 }
 
 export interface PromptFile {
@@ -95,11 +104,30 @@ function hintsOf(src: ts.SourceFile, value: ts.Expression | undefined): Pick<Pro
   const one = textOf(expr);
   if (one !== undefined && !ts.isArrayLiteralExpression(expr)) return { hints: [{ text: one, span: literalSpan(expr) }] };
   if (!ts.isArrayLiteralExpression(expr)) return { hints: [] };
+  const lineStart = (pos: number) => src.text.lastIndexOf("\n", pos - 1) + 1;
+  const indentOf = (node: ts.Node) => {
+    const i = src.text.slice(lineStart(node.getStart()), node.getStart());
+    return /^\s*$/.test(i) ? i : undefined;
+  };
   const hints: Hint[] = [];
   for (const e of expr.elements) {
     if (ts.isSpreadElement(e)) {
-      // `...(recheck ? [..] : [])`: the first-time branch, matching the question text.
       const inner = unwrap(e.expression);
+      // `...forStage(stage, { early: [..], mid: [..], late: [..] })`: every
+      // stage's hints, each a literal a proposal can rewrite.
+      const byStage = ts.isCallExpression(inner) && ts.isIdentifier(inner.expression) && inner.expression.text === "forStage" ? inner.arguments[1] : undefined;
+      if (byStage !== undefined && ts.isObjectLiteralExpression(byStage)) {
+        for (const [stage, list] of props(byStage)) {
+          const arr = unwrap(list);
+          if (!ts.isArrayLiteralExpression(arr)) continue;
+          for (const b of arr.elements) {
+            const s = textOf(b as ts.Expression);
+            if (s !== undefined) hints.push({ text: s, span: literalSpan(b as ts.Expression), stage, indent: indentOf(b) });
+          }
+        }
+        continue;
+      }
+      // `...(recheck ? [..] : [])`: the first-time branch, matching the question text.
       const branch = ts.isConditionalExpression(inner) ? unwrap(inner.whenFalse) : inner;
       if (ts.isArrayLiteralExpression(branch)) for (const b of branch.elements) {
         const s = textOf(b as ts.Expression);
@@ -111,7 +139,6 @@ function hintsOf(src: ts.SourceFile, value: ts.Expression | undefined): Pick<Pro
     if (s !== undefined) hints.push({ text: s, span: literalSpan(e) });
   }
   const first = expr.elements[0];
-  const lineStart = (pos: number) => src.text.lastIndexOf("\n", pos - 1) + 1;
   const indent = first
     ? src.text.slice(lineStart(first.getStart()), first.getStart())
     : src.text.slice(lineStart(expr.getStart()), expr.getStart()).match(/^\s*/)![0] + "  ";

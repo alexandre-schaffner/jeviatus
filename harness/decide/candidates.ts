@@ -9,6 +9,7 @@ import { targetTransportTile } from "src/core/game/TransportShipUtils";
 import { type EconomySnapshot, railFeatures } from "../observe/economy";
 import { type NukeOption, nukeOptions, nukeTargets } from "./nukes";
 import { kindOf, type Observation, type PlayerObs, troopFill } from "../observe/state";
+import { PLAYBOOKS } from "./playbook";
 import { compass, landNear, mapRegion, type Scan, type SectorGrid } from "../observe/sectors";
 
 export const ROUTES = {
@@ -185,6 +186,7 @@ export function buildCandidates(
   attackPeaks: ReadonlyMap<string, number> = new Map(),
 ): Candidates {
   const gold = me.gold();
+  const book = PLAYBOOKS[obs.stage];
   const underAttack = me.incomingAttacks().some((a) => a.attacker().isPlayer());
   const maxThreat = obs.players.filter((o) => o.bordersMe).reduce((m, o) => Math.max(m, threat.get(o.player.id()) ?? 0), 0);
   const attackTargets = obs.players.filter(
@@ -206,7 +208,7 @@ export function buildCandidates(
     : [];
   const buildOptions: BuildOption[] = [];
   for (const type of BUILDABLE) {
-    if (game.config().isUnitDisabled(type)) continue;
+    if (game.config().isUnitDisabled(type) || book.buildsOff.includes(type)) continue;
     const cost = game.unitInfo(type).cost(game, me);
     if (cost > gold) continue;
     if (type === UnitType.Port && !obs.coastal) continue;
@@ -225,7 +227,7 @@ export function buildCandidates(
       buildOptions.push({ type, key: `upgrade_${BUILD_KEYS[type]}`, cost: Number(cost), why: upgradeWhy(game, me, type, upgrade, econ), upgrade });
     }
   }
-  const savingsGoals = savings(game, me, gold);
+  const savingsGoals = savings(game, me, gold).filter((s) => !book.savingsOff.includes(s.key));
   const allyCandidates = obs.players.filter(
     (o) => o.player.type() !== PlayerType.Bot && me.canSendAllianceRequest(o.player),
   );

@@ -62,6 +62,7 @@ export interface StepRow {
   intents: IntentRow[];
   buildOptions: string[];
   goal?: string;
+  stage?: string;
   // Answers to the route call (Call A), for the moment dumps.
   answers: Record<string, unknown> | null;
   calls: number;
@@ -161,6 +162,7 @@ function stepRow(e: Event): StepRow {
     intents: (e.intents as IntentRow[] | undefined) ?? [],
     buildOptions: ((e.candidates as { build?: string[] } | undefined)?.build ?? []),
     goal: (e.memory as { goal?: string } | undefined)?.goal,
+    stage: (e.memory as { stage?: string } | undefined)?.stage,
     answers: call?.answers ?? null,
     calls: stats.calls,
     failedCalls: stats.failed,

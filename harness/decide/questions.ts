@@ -4,6 +4,7 @@
 
 import { choice, noul, type Questions, score } from "@typesafe-ai/sdk";
 import { GOALS } from "../strategy/memory";
+import type { Stage } from "../strategy/stage";
 import type { PlayerObs } from "../observe/state";
 import { BUILD_PURPOSE, type BuildOption, type Candidates, ROUTES, type SiteCandidate, UPGRADE_PURPOSE } from "./candidates";
 
@@ -14,6 +15,12 @@ function optionText(b: BuildOption): string {
 }
 
 export const NONE = "none";
+
+// Hints that hold at one stage of the game only (`game.stage`, see
+// strategy/stage.ts): Jev reads the current stage's list.
+function forStage(stage: Stage, hints: Record<Stage, string[]>): string[] {
+  return hints[stage];
+}
 
 // Commit levels: Score levels map to these troop fractions (interpolated on
 // the expected score).
@@ -98,7 +105,7 @@ export interface AllianceContext {
 const DOCTRINE =
   "`strategy.doctrine` is the playstyle a viewer proposed and the stream's creator picked: follow its spirit whenever doing so does not clearly risk losing";
 
-export function routeQuestions(c: Candidates, unclaimed: number, troops: string, ally?: AllianceContext, doctrine = false): Questions {
+export function routeQuestions(c: Candidates, unclaimed: number, troops: string, ally?: AllianceContext, doctrine = false, stage: Stage = "mid"): Questions {
   const q: Questions = {
     route: choice(
       {
@@ -122,6 +129,23 @@ export function routeQuestions(c: Candidates, unclaimed: number, troops: string,
           "but never empty my army: a neighbor that sees me drained attacks me next. Code keeps `me.troops_kept_home_share` at home against my strongest neighbor, so a big commit may be trimmed",
           "one good attack at a time usually beats several weak ones: each front costs troops to hold",
           "once my land share nears half, nations start aiming nukes and MIRVs at me: have SAM launchers over my cities before that",
+          ...forStage(stage, {
+            early: [
+              "unclaimed land goes to whoever reaches it first, and it never comes free again: while my border touches it, expanding usually beats every other action",
+              "a war now costs the troops that would have claimed free land: attack only tribes, or a neighbor already attacking me",
+              "alliances are cheapest now, since nations accept readily early: a secured border lets every troop go into free land",
+            ],
+            mid: [
+              "the free land is mostly gone: growth comes from farming weaker neighbors and tribes, one at a time, finishing each before starting the next",
+              "business bought now compounds for the rest of the game: factories on rail and ports with many trade partners",
+              "the endgame is coming: by then have SAM launchers over my cities, and a silo if I can afford one",
+            ],
+            late: [
+              "only land wins now: if I lead (`game.leader.player` is me), keep pushing, since a stalled leader is the one nations nuke and MIRV",
+              "if someone else leads and is close to winning (`game.leader.share_of_land_needed_to_win`), hitting them by land, sea or nuke matters more than anything else: their win is my loss",
+              "gold left when the game ends wins nothing: spend it",
+            ],
+          }),
         ],
       },
       routeCriteria(c, unclaimed, troops),
@@ -130,7 +154,14 @@ export function routeQuestions(c: Candidates, unclaimed: number, troops: string,
       {
         role: WHO,
         question: "Which overall strategy fits my situation best for the next few minutes?",
-        ...(doctrine ? { consider: [DOCTRINE] } : {}),
+        consider: [
+          ...(doctrine ? [DOCTRINE] : []),
+          ...forStage(stage, {
+            early: ["the land grab decides the rest of the game: grow_territory almost always fits, unless a neighbor is overrunning me"],
+            mid: ["there is little free land left: conquer_neighbor and build_economy usually beat grow_territory"],
+            late: ["push for the win if I lead or can catch the leader; otherwise fortify or survive, and help bring the leader down"],
+          }),
+        ],
       },
       { ...GOALS },
     ),
@@ -142,6 +173,13 @@ export function routeQuestions(c: Candidates, unclaimed: number, troops: string,
         premise: "Suppose I send troops into adjacent unclaimed land now.",
         question: "How large a share of my current troops should go?",
         context: "`me.troop_fill` is how full my troop pool is; `me.under_attack_by` lists who is attacking me.",
+        consider: [
+          ...forStage(stage, {
+            early: ["nobody defends unclaimed land and troops regrow fastest near 40% full: sending heavily is efficient unless someone is attacking me"],
+            mid: [],
+            late: [],
+          }),
+        ],
       },
       [
         "light: about a tenth, keep most troops home",
@@ -173,6 +211,11 @@ export function routeQuestions(c: Candidates, unclaimed: number, troops: string,
           "if others are attacking the same player (`conquest.others_attacking_them`), their attack does the work: a well-timed push that takes the last tiles before the 100-tile line steals the whole reward. An attack that stops short only softens them for a rival",
           "a human who never attacked anyone pays no gold, but their land still counts",
           "attacking a trade partner makes them embargo me and cuts the trade and rail income shared with them",
+          ...forStage(stage, {
+            early: ["tribes are the target now: cheap, and they never retaliate. A nation hit this early fights back while I should be expanding"],
+            mid: [],
+            late: ["when someone else is close to winning, their land is the land that matters: every tile taken from them also delays their win"],
+          }),
         ],
       },
       opts as never,
@@ -295,6 +338,11 @@ export function routeQuestions(c: Candidates, unclaimed: number, troops: string,
           "upgrading an existing structure costs the same as a new one of that type and needs no new site",
           "save only for a specific big purchase that matters soon, like a SAM launcher when a rival owns a missile silo",
           "if I might be conquered soon, my unspent gold goes to my conqueror: spend it",
+          ...forStage(stage, {
+            early: ["cities first: more troop capacity is more land claimed while it is free. A factory pays little until I own several cities and ports"],
+            mid: ["factories next to my cities and ports start the train income that pays for the rest of the game"],
+            late: ["saving rarely pays now: gold left when the game ends wins nothing. SAM launchers over my cities, or a nuke on the leader, come first"],
+          }),
         ],
       },
       opts,
