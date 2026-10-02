@@ -31,7 +31,8 @@ export async function rebuildFor(commit: string, log: (line: string) => void): P
   await run(["git", "checkout", "--quiet", "--force", commit], vendor);
   if (lockHash() !== before) {
     log("[updater] OpenFront dependencies changed; reinstalling");
-    await run(["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], vendor);
+    // vendor/OpenFrontIO's .npmrc sets engine-strict and it requires npm 12; see `setup`.
+    await run(["npm", "ci", "--ignore-scripts", "--engine-strict=false", "--no-audit", "--no-fund"], vendor);
   }
   log("[updater] rebuilding the extension");
   await run(["bun", "scripts/build-extension.ts"], root);
