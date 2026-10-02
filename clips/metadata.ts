@@ -184,12 +184,25 @@ function hashtags(f: ClipFacts, max: number): string[] {
   return [...new Set([...BASE_TAGS, ...extra])].slice(0, max).map((t) => `#${t}`);
 }
 
+// The scoreboard line that improved, in the video's order, so a kept change
+// never claims "0/4 → 0/4 wins" as progress. Null when nothing did.
+function gain(e: EvolutionFacts): string | null {
+  const { before: b, after: a } = e;
+  if (!b || !a) return null;
+  if (a.wins / Math.max(a.games, 1) > b.wins / Math.max(b.games, 1)) return `${b.wins}/${b.games} → ${a.wins}/${a.games} wins`;
+  if (b.meanPlacement !== null && a.meanPlacement !== null && Math.round(a.meanPlacement) < Math.round(b.meanPlacement)) return `avg place #${Math.round(b.meanPlacement)} → #${Math.round(a.meanPlacement)}`;
+  if (pct(a.meanPeakShare) !== pct(b.meanPeakShare) && a.meanPeakShare > b.meanPeakShare) return `peak land ${pct(b.meanPeakShare)} → ${pct(a.meanPeakShare)}`;
+  if (a.medianMinutes > b.medianMinutes) return `${b.medianMinutes} → ${a.medianMinutes} min alive`;
+  return null;
+}
+
 // A short title: the headline for gameplay, the change for the lab.
 function title(f: ClipFacts): string {
   if (f.evolution) {
     const e = f.evolution;
     if (e.stage === "proposed") return pickFrom([`Claude Code just rewrote my AI's brain: "${e.title}"`, `AI rewrites itself between matches: "${e.title}"`, `Live on stream, Claude Code changed how my AI plays: "${e.title}"`], f.id, "t");
-    if (e.verdict === "kept") return pickFrom([`My AI rewrote its brain and got better (${e.before?.wins ?? 0}/${e.before?.games ?? 0} → ${e.after?.wins ?? 0}/${e.after?.games ?? 0} wins)`, `Claude Code's change to my AI worked: "${e.title}"`], f.id, "t");
+    const g = gain(e);
+    if (e.verdict === "kept") return pickFrom([...(g ? [`My AI rewrote its brain and got better (${g})`] : []), `Claude Code's change to my AI worked: "${e.title}"`], f.id, "t");
     return pickFrom([`Claude Code's change to my AI didn't help. Dropped: "${e.title}"`, `My AI tried to improve itself. It got worse: "${e.title}"`], f.id, "t");
   }
   return specificHeadline(f);
@@ -206,7 +219,7 @@ export function specificHeadline(f: Pick<ClipFacts, "headline" | "alts" | "names
 function redditTitle(f: ClipFacts, sub: Subreddit): string {
   if (f.evolution) {
     const e = f.evolution;
-    const result = e.stage === "proposed" ? "the next games test it" : e.verdict === "kept" ? `it helped (${e.before?.wins ?? 0}/${e.before?.games ?? 0} → ${e.after?.wins ?? 0}/${e.after?.games ?? 0} wins), so it stays` : "it didn't help, so it was dropped";
+    const result = e.stage === "proposed" ? "the next games test it" : e.verdict === "kept" ? (gain(e) ? `it helped (${gain(e)}), so it stays` : "it held up, so it stays") : "it didn't help, so it was dropped";
     return truncate(`My OpenFront AI improves itself live on stream: Claude Code proposed "${e.title}", and ${result}`, 300);
   }
   const lead = sub.name === "Openfront" ? "My AI bot Jev playing public lobbies" : "An AI playing OpenFront against real people";

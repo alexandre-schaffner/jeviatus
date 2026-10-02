@@ -153,6 +153,19 @@ describe("post metadata", () => {
     expect(subs).toEqual(SUBREDDITS.filter((x) => x.kinds.includes("evolution")).map((x) => x.name));
     expect(s.platforms.tiktok.hashtags).toContain("#claudecode");
   });
+
+  test("a kept change cites the stat that improved, not unchanged wins", () => {
+    const b = { sha: "a", games: 4, wins: 0, meanPlacement: 24.3, medianMinutes: 7.1, meanPeakShare: 0.02 };
+    for (const id of ["evo-585af03-verdict", "evo-1234567-verdict", "evo-86d3eeb-verdict"]) {
+      const s = sidecar(
+        facts({ id, kind: "evolution", headline: "Defend first", moments: [], evolution: { title: "Defend first", n: 1, stage: "verdict", verdict: "kept", before: b, after: { ...b, sha: "b", meanPlacement: 23.3, medianMinutes: 6.9, meanPeakShare: 0.037 }, files: [] } }),
+        "v.mp4",
+        "t",
+      );
+      expect(s.platforms.tiktok.caption).not.toContain("0/4 → 0/4");
+      expect(s.platforms.reddit.title).toContain("avg place #24 → #23");
+    }
+  });
 });
 
 // A lab change: parent = the build before, the commit = the change.
