@@ -2,10 +2,9 @@
 // gathers the evidence (transcript, chat, viewer clips, loudness); Jev judges
 // each moment against what makes this streamer's clips go viral
 // (questions.ts) and picks where the clip starts and ends among the
-// transcript's own line breaks. Hooks are drafted by Claude and picked by Jev.
+// transcript's own line breaks. Hooks are drafted by Hermes's LLM and picked by Jev.
 
 import { mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
 import type { Jev } from "../harness/jev/client";
 import type { ChatSample, ViewerClip, Vod } from "./kick";
 import { type Answers, hookQuestion, momentQuestions, scoreOf } from "./questions";
@@ -164,9 +163,18 @@ export function rank(cs: Candidate[]): Candidate[] {
   return kept;
 }
 
-// Hook candidates, drafted by Claude Code (`claude -p`, the user's login)
-// from the clip's transcript in the formats that work for this streamer,
-// then Jev picks one. Viewer clip titles go in the pool too.
+// Hook candidates, drafted by an LLM from the clip's transcript in the
+// formats that work for this streamer, then Jev picks one. Viewer clip titles
+// go in the pool too. The LLM is whatever provider the Hermes agent runs on,
+// through its OpenAI-compatible endpoint: HOOKS_BASE_URL, HOOKS_API_KEY and
+// HOOKS_MODEL, copied from Hermes's own config. Without them, the pool is the
+// viewer clip titles (or the clip's first line).
+const HOOKS = {
+  baseUrl: process.env.HOOKS_BASE_URL ?? "https://openrouter.ai/api/v1",
+  apiKey: process.env.HOOKS_API_KEY ?? "",
+  model: process.env.HOOKS_MODEL ?? "",
+};
+
 async function draft(st: Streamer, c: Candidate): Promise<{ hooks: string[]; caption: string }> {
   const said = c.lines.filter((l) => l.t >= c.fromSec - c.peak.sec - 1 && l.t <= c.toSec - c.peak.sec).map((l) => `[${l.t}s] ${l.text}`);
   const prompt = [
@@ -178,17 +186,27 @@ async function draft(st: Streamer, c: Candidate): Promise<{ hooks: string[]; cap
     st.speakers,
     "Give 5 different hooks (each under 60 characters, no hashtags, no emoji) and one Instagram caption (a 1-4 word ironic moral or lingo tag like 'Always check id' or 'Brutal', then 4-6 hashtags). A quoted hook must be words actually said in the transcript. Never add events, objects or outcomes the transcript doesn't state.",
   ].join("\n\n");
-  const schema = { type: "object", properties: { hooks: { type: "array", items: { type: "string" } }, caption: { type: "string" } }, required: ["hooks", "caption"] };
-  const p = Bun.spawn(
-    ["claude", "-p", "--model", "sonnet", "--tools", "", "--settings", JSON.stringify({ alwaysThinkingEnabled: false }), "--output-format", "json",
-      "--json-schema", JSON.stringify(schema), "--strict-mcp-config", "--setting-sources", "", "--no-session-persistence"],
-    { cwd: tmpdir(), env: { ...process.env, MAX_THINKING_TOKENS: "0" }, stdin: new Blob([prompt]), stdout: "pipe", stderr: "pipe" },
-  );
-  const out = await new Response(p.stdout).text();
-  await p.exited;
-  const body = JSON.parse(out.slice(out.indexOf("{"))) as { structured_output?: { hooks?: string[]; caption?: string }; result?: string };
-  if (!body.structured_output?.hooks?.length) throw new Error(`claude -p: ${String(body.result ?? out).slice(0, 200)}`);
-  return { hooks: body.structured_output.hooks.map((h) => h.trim()).filter(Boolean), caption: body.structured_output.caption ?? "" };
+  const res = await fetch(`${HOOKS.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${HOOKS.apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      model: HOOKS.model,
+      messages: [
+        { role: "system", content: 'Answer with one JSON object and nothing else: {"hooks": [5 strings], "caption": "string"}.' },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.8,
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`hooks provider ${res.status}: ${text.slice(0, 200)}`);
+  const content = (JSON.parse(text) as { choices?: { message?: { content?: string } }[] }).choices?.[0]?.message?.content ?? "";
+  const json = content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1);
+  const body = JSON.parse(json || "{}") as { hooks?: unknown; caption?: unknown };
+  const hooks = Array.isArray(body.hooks) ? body.hooks.filter((h): h is string => typeof h === "string").map((h) => h.trim()).filter(Boolean) : [];
+  if (!hooks.length) throw new Error(`hooks provider: no hooks in ${content.slice(0, 200)}`);
+  return { hooks, caption: typeof body.caption === "string" ? body.caption : "" };
 }
 
 export async function writeHooks(st: Streamer, cs: Candidate[], jev: Jev | null, log: (l: string) => void): Promise<Candidate[]> {
@@ -196,13 +214,14 @@ export async function writeHooks(st: Streamer, cs: Candidate[], jev: Jev | null,
     cs.map(async (c) => {
       let pool: string[] = [];
       let caption = "";
-      try {
-        const d = await draft(st, c);
-        pool = d.hooks;
-        caption = d.caption;
-      } catch (err) {
-        log(`[hooks] ${c.peak.sec}: ${err instanceof Error ? err.message : String(err)}`);
-      }
+      if (HOOKS.apiKey && HOOKS.model)
+        try {
+          const d = await draft(st, c);
+          pool = d.hooks;
+          caption = d.caption;
+        } catch (err) {
+          log(`[hooks] ${c.peak.sec}: ${err instanceof Error ? err.message : String(err)}`);
+        }
       pool = [...new Set([...pool, ...c.viewerClipTitles.filter((t) => t.length >= 12 && t.length <= 70)])];
       if (!pool.length) pool = [c.summary.split(/[.?!]/)[0]!.slice(0, 60)];
       let hook = pool[0]!;

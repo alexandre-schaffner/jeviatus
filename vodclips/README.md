@@ -8,7 +8,7 @@ Kick VOD ──► 160p segments ──► audio ──► whisper base.en (whol
          └─► chat replay, sampled every 30 s                     ▼
 signals.ts: heat per second ──► 150 peaks ──► Jev judges each (questions.ts)
    ──► top 40 re-transcribed with large-v3-turbo, judged again ──► ranked.json
-   ──► hooks: Claude drafts 5, Jev picks one ──► render.ts ──► out/NN-HHMMSS.mp4 + .txt
+   ──► hooks: Hermes's LLM drafts 5, Jev picks one ──► render.ts ──► out/NN-HHMMSS.mp4 + .txt
 ```
 
 ## Stages
@@ -44,10 +44,10 @@ The channel is never assumed: pass `--channel <slug>` or set `VODCLIPS_CHANNEL`.
 
 [watch.ts](watch.ts) checks the channel every 30 minutes and runs `all` on each VOD that has finished since it started, one at a time, with a work dir per VOD under `/data/<channel>/<vod id>`. The first run marks the VODs already on the channel as seen (`--backfill` processes them too). A VOD that fails 3 times is skipped. After a VOD is done, its segments, audio and whisper chunks are deleted (about 3 GB a day of stream), and the JSON and `out/` are kept. Add `--once` to have an outside scheduler (cron, an agent) run it instead of the built-in loop.
 
-The container bundles all of that: ffmpeg with libass, whisper.cpp built on the host, the three models, Claude Code and Bun.
+The container bundles all of that: ffmpeg with libass, whisper.cpp, the three models and Bun.
 
 ```sh
-# .env: TYPESAFE_API_KEY, and CLAUDE_CODE_OAUTH_TOKEN (claude setup-token) or ANTHROPIC_API_KEY
+# .env: TYPESAFE_API_KEY, and HOOKS_BASE_URL / HOOKS_API_KEY / HOOKS_MODEL from Hermes's provider
 VODCLIPS_CHANNEL=clavicular docker compose -f vodclips/compose.yml up -d --build
 docker compose -f vodclips/compose.yml logs -f
 docker compose -f vodclips/compose.yml cp vodclips:/data ./vodclips-data   # copy the clips out
@@ -92,4 +92,4 @@ Each `.txt` next to a clip holds the hook, the post caption, and the VOD timesta
   - `ggml-large-v3-turbo-q5_0.bin`
   - `ggml-silero-v5.1.2.bin`
 - **Jev:** `TYPESAFE_API_KEY`.
-- **Claude Code CLI:** `claude`, logged in, for the hook drafts.
+- **An LLM for the hook drafts:** the provider the Hermes agent runs on, through its OpenAI-compatible API. Set `HOOKS_BASE_URL` (default OpenRouter), `HOOKS_API_KEY` and `HOOKS_MODEL` to the values in Hermes's config. Without them, hooks come from viewer clip titles.

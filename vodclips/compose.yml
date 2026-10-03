@@ -10,7 +10,7 @@ services:
       context: ..
       dockerfile: vodclips/Dockerfile
     image: vodclips
-    # TYPESAFE_API_KEY for Jev, and CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY for the hooks.
+    # TYPESAFE_API_KEY for Jev; HOOKS_BASE_URL, HOOKS_API_KEY and HOOKS_MODEL (Hermes's provider) for the hooks.
     env_file: ../.env
     environment:
       VODCLIPS_CHANNEL: ${VODCLIPS_CHANNEL:?set VODCLIPS_CHANNEL to the Kick channel slug}

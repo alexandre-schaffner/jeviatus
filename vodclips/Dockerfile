@@ -35,13 +35,6 @@ COPY <<'XML' /etc/fonts/conf.d/99-vodclips.conf
 XML
 COPY --from=whisper /build/bin/whisper-cli /usr/local/bin/whisper-cli
 
-# Claude Code drafts the hooks (moments.ts). It logs in from
-# CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`) or ANTHROPIC_API_KEY.
-ARG CLAUDE_CODE_VERSION=2.1.283
-RUN npm install --global --no-audit --no-fund "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && claude --version
-ENV DISABLE_AUTOUPDATER=1 \
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
-
 COPY --from=docker.io/oven/bun:1.3.14-slim /usr/local/bin/bun /usr/local/bin/bun
 
 RUN useradd --create-home --uid 10001 jev && mkdir -p /app /data && chown jev:jev /app /data
