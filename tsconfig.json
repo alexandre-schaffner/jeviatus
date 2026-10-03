@@ -28,6 +28,7 @@
     "tests/**/*",
     "tiktok/**/*",
     "clips/**/*",
+    "vodclips/**/*",
     "social/**/*",
     "vendor/OpenFrontIO/src/client/vite-env.d.ts"
   ]

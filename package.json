@@ -20,6 +20,7 @@
     "tiktok": "bun tiktok/cli.ts",
     "clips": "bun clips/cli.ts",
     "clips:watch": "bun clips/cli.ts --watch",
+    "vodclips": "bun vodclips/cli.ts",
     "clips:start": "sh clips/watch-daemon.sh start",
     "clips:stop": "sh clips/watch-daemon.sh stop",
     "social:post": "bun social/post.ts",

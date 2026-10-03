@@ -1,0 +1,26 @@
+# Clips from every new VOD of one Kick channel. From the repository root:
+#   VODCLIPS_CHANNEL=<kick slug> docker compose -f vodclips/compose.yml up -d --build
+# or put VODCLIPS_CHANNEL in .env. The profile vodclips/streamers/<slug>.json
+# is used when there is one (VODCLIPS_STREAMER points at another file).
+# Clips land in the volume at /data/<channel>/<vod id>/out.
+name: vodclips
+services:
+  vodclips:
+    build:
+      context: ..
+      dockerfile: vodclips/Dockerfile
+    image: vodclips
+    # TYPESAFE_API_KEY for Jev, and CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY for the hooks.
+    env_file: ../.env
+    environment:
+      VODCLIPS_CHANNEL: ${VODCLIPS_CHANNEL:?set VODCLIPS_CHANNEL to the Kick channel slug}
+      VODCLIPS_STREAMER: ${VODCLIPS_STREAMER:-}
+    command: ["--every", "${VODCLIPS_EVERY:-30}", "--top", "${VODCLIPS_TOP:-8}"]
+    restart: unless-stopped
+    volumes:
+      - vodclips-data:/data
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+volumes:
+  vodclips-data:
