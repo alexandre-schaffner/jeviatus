@@ -57,40 +57,19 @@ It only renders. Nothing is posted anywhere.
 
 A 24 h stream needs about 3 GB of disk while it's processed. Whisper is the slow part: on 4 CPU cores, expect a few hours per day of stream, not the 30 min measured on the Mac.
 
-## Setup by the Hermes agent
+## Hooks from the Hermes agent's LLM
 
-This section is written for the Hermes agent on the Freebox (`fedora-fbx`), which runs the container under its own user. Run it as your own user, `hermes`. Don't SSH to another account.
+The hook drafts use the LLM provider the Hermes agent runs on. Its settings reach the container sealed, so the plaintext only exists inside it:
 
-`secrets.env.age` holds `TYPESAFE_API_KEY`, encrypted with [age](https://age-encryption.org) to the SSH key in [hermes.pub](hermes.pub) (`hermes-vodclips-access`). The owner created it with [seal.sh](seal.sh). Only your private key can open it.
-
-1. **Check the recipient.** `hermes.pub` was typed in from a screenshot of your message. Compare it with your own public key, e.g. `ssh-keygen -lf hermes.pub` against `ssh-keygen -lf ~/.ssh/<your key>.pub`. If the fingerprints differ, stop and tell the owner: the file can't be decrypted, and it needs to be sealed again with the correct key.
-2. **Get age** if `command -v age` finds nothing. Without sudo, use a release binary:
+1. On start, the container creates an age keypair in `/data/secrets` and logs the public key: `sealed secrets: encrypt KEY=value lines to age1…`.
+2. Hermes encrypts its provider to that key, in its own sandbox, and sends the armored output. That output is safe to paste anywhere, Telegram included:
    ```sh
-   mkdir -p ~/.local/bin && curl -fsSL https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-arm64.tar.gz | tar -xz -C /tmp && mv /tmp/age/age ~/.local/bin/ && export PATH=$HOME/.local/bin:$PATH
+   printf 'HOOKS_BASE_URL=%s\nHOOKS_API_KEY=%s\nHOOKS_MODEL=%s\n' "<OpenAI-compatible base URL>" "<key>" "<model id>" | age -a -r age1…
    ```
-3. **Write the `.env`.** Decrypt straight into it, then add the channel and your own LLM provider for the hook drafts: its OpenAI-compatible base URL, your key for it, and your model ID. Never print or send these values anywhere.
-   ```sh
-   cd ~/vodclips && umask 077
-   age -d -i ~/.ssh/<your private key> vodclips/secrets.env.age > .env
-   cat >> .env <<'ENV'
-   VODCLIPS_CHANNEL=clavicular
-   HOOKS_BASE_URL=<your provider's OpenAI-compatible base URL>
-   HOOKS_API_KEY=<your provider key>
-   HOOKS_MODEL=<your model id>
-   ENV
-   sed 's/=.*/=<set>/' .env   # names only
-   ```
-4. **Build, smoke-test, run.** The build takes about 15-25 min on this box.
-   ```sh
-   podman build -f vodclips/Dockerfile -t localhost/vodclips .
-   podman run --rm localhost/vodclips --channel clavicular --once --data /tmp/vodclips-smoke   # expect "N existing VODs marked seen"
-   podman run -d --name vodclips --restart=unless-stopped --env-file .env -v vodclips-data:/data localhost/vodclips --channel clavicular
-   podman logs vodclips
-   ```
-5. **Keep it running across reboots:** check `loginctl show-user hermes -p Linger`. If it says `no`, ask the owner to run `sudo loginctl enable-linger hermes`.
-6. **Report back** to the owner: the container status and the last log lines. A container named `vodclips` may also be running under the `alex` account. The owner will remove it once yours is up, so the two don't watch the same channel.
+   If age is missing, use the release binary: `curl -fsSL https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz | tar -xz` (use `linux-arm64` on ARM).
+3. Save that output as `/data/secrets/hooks.env.age` in the volume. Before each VOD, the container decrypts every `*.env.age` file there into the pipeline's environment, so it doesn't need a restart. The log names the keys it found, never their values.
 
-The clips land in the `vodclips-data` volume, under `/data/<channel>/<vod id>/out/`. The container only renders. Nothing is posted anywhere.
+Without it, hooks come from viewer clip titles.
 
 ## Where the questions come from
 

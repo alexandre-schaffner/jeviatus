@@ -15,8 +15,14 @@
 // starts with the next stream instead of rendering the whole back catalog.
 // After a VOD's clips are rendered, the 160p segments, the audio and the
 // chunks are deleted (about 3 GB a day of stream); the JSON and out/ stay.
+//
+// Sealed secrets: on start it makes an age keypair in <data>/secrets and logs
+// the public key. Any <data>/secrets/*.env.age encrypted to it is decrypted
+// before each VOD and its KEY=value lines go into the pipeline's environment
+// (how the Hermes agent hands over its LLM provider; vodclips/README.md).
+// Values are never logged.
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { listVods } from "./kick";
@@ -43,6 +49,37 @@ const stateFile = path.join(root, "state.json");
 mkdirSync(root, { recursive: true });
 const log = (l: string) => console.log(`${new Date().toISOString().slice(0, 19)} [watch] ${l}`);
 
+const secrets = path.join(values.data!, "secrets");
+const identity = path.join(secrets, "identity.txt");
+
+function sealedSetup(): string {
+  mkdirSync(secrets, { recursive: true, mode: 0o700 });
+  if (!existsSync(identity) && Bun.spawnSync(["age-keygen", "-o", identity], { stderr: "ignore" }).exitCode !== 0) throw new Error("age-keygen failed");
+  return readFileSync(identity, "utf8").match(/public key: (age1\w+)/)?.[1] ?? "";
+}
+
+// KEY=value lines from every sealed file; a file that won't decrypt is skipped.
+function unseal(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const f of readdirSync(secrets).filter((f) => f.endsWith(".env.age")).sort()) {
+    const r = Bun.spawnSync(["age", "-d", "-i", identity, path.join(secrets, f)], { stderr: "ignore" });
+    if (r.exitCode !== 0) {
+      log(`sealed ${f}: can't decrypt (not encrypted to this container's key?)`);
+      continue;
+    }
+    const keys: string[] = [];
+    for (const line of r.stdout.toString().split("\n")) {
+      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)=(.*)$/);
+      if (m) {
+        env[m[1]!] = m[2]!.trim().replace(/^["']|["']$/g, "");
+        keys.push(m[1]!);
+      }
+    }
+    log(`sealed ${f}: ${keys.join(", ") || "no KEY=value lines"}`);
+  }
+  return env;
+}
+
 interface State {
   done: number[];
   failed: Record<string, number>; // vod id -> attempts
@@ -55,7 +92,9 @@ const writeState = (s: State) => writeFileSync(stateFile, JSON.stringify(s, null
 async function processVod(id: number, state: State) {
   const work = path.join(root, String(id));
   log(`VOD ${id}: starting (${work})`);
+  const env = { ...process.env, ...unseal() };
   const p = Bun.spawn(["bun", path.join(import.meta.dir, "cli.ts"), "all", "--channel", channel, "--vod", String(id), "--work", work, "--top", values.top!, ...(values.streamer ? ["--streamer", values.streamer] : [])], {
+    env,
     stdout: "inherit",
     stderr: "inherit",
   });
@@ -85,6 +124,9 @@ async function tick() {
   if (!todo.length) log("no new VOD");
   for (const v of todo) await processVod(v.id, state);
 }
+
+log(`sealed secrets: encrypt KEY=value lines to ${sealedSetup()} and put them in ${secrets}/<name>.env.age`);
+unseal();
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 for (;;) {

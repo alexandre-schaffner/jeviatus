@@ -21,7 +21,7 @@ FROM docker.io/library/node:24-slim
 ENV DEBIAN_FRONTEND=noninteractive
 # Debian's ffmpeg has libass, which render.ts needs for the hook and the KICK bar.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl tini fontconfig fonts-liberation2 fonts-dejavu-core \
+ && apt-get install -y --no-install-recommends ffmpeg age ca-certificates curl tini fontconfig fonts-liberation2 fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
 # render.ts names the fonts of the Mac it was tuned on; these are the
 # metric-compatible ones on Linux.
