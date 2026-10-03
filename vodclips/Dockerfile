@@ -8,7 +8,7 @@
 # one that runs it (Docker Desktop on Apple silicon misdetects dot-product
 # support, and the Freebox VMs are Cortex-A72s without it). Build with
 # --build-arg WHISPER_NATIVE=ON on the machine that runs it for more speed.
-FROM node:24-slim AS whisper
+FROM docker.io/library/node:24-slim AS whisper
 ARG WHISPER_CPP_VERSION=v1.7.6
 ARG WHISPER_NATIVE=OFF
 RUN apt-get update \
@@ -17,7 +17,7 @@ RUN apt-get update \
  && cmake -S /src -B /build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DGGML_NATIVE="$WHISPER_NATIVE" \
  && cmake --build /build -j"$(nproc)" --target whisper-cli
 
-FROM node:24-slim
+FROM docker.io/library/node:24-slim
 ENV DEBIAN_FRONTEND=noninteractive
 # Debian's ffmpeg has libass, which render.ts needs for the hook and the KICK bar.
 RUN apt-get update \
@@ -42,7 +42,7 @@ RUN npm install --global --no-audit --no-fund "@anthropic-ai/claude-code@${CLAUD
 ENV DISABLE_AUTOUPDATER=1 \
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
-COPY --from=oven/bun:1.3.14-slim /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=docker.io/oven/bun:1.3.14-slim /usr/local/bin/bun /usr/local/bin/bun
 
 RUN useradd --create-home --uid 10001 jev && mkdir -p /app /data && chown jev:jev /app /data
 USER jev
