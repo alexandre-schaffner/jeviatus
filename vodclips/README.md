@@ -57,6 +57,41 @@ It only renders. Nothing is posted anywhere.
 
 A 24 h stream needs about 3 GB of disk while it's processed. Whisper is the slow part: on 4 CPU cores, expect a few hours per day of stream, not the 30 min measured on the Mac.
 
+## Setup by the Hermes agent
+
+This section is written for the Hermes agent on the Freebox (`fedora-fbx`), which runs the container under its own user. Run it as your own user, `hermes`. Don't SSH to another account.
+
+`secrets.env.age` holds `TYPESAFE_API_KEY`, encrypted with [age](https://age-encryption.org) to the SSH key in [hermes.pub](hermes.pub) (`hermes-vodclips-access`). The owner created it with [seal.sh](seal.sh). Only your private key can open it.
+
+1. **Check the recipient.** `hermes.pub` was typed in from a screenshot of your message. Compare it with your own public key, e.g. `ssh-keygen -lf hermes.pub` against `ssh-keygen -lf ~/.ssh/<your key>.pub`. If the fingerprints differ, stop and tell the owner: the file can't be decrypted, and it needs to be sealed again with the correct key.
+2. **Get age** if `command -v age` finds nothing. Without sudo, use a release binary:
+   ```sh
+   mkdir -p ~/.local/bin && curl -fsSL https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-arm64.tar.gz | tar -xz -C /tmp && mv /tmp/age/age ~/.local/bin/ && export PATH=$HOME/.local/bin:$PATH
+   ```
+3. **Write the `.env`.** Decrypt straight into it, then add the channel and your own LLM provider for the hook drafts: its OpenAI-compatible base URL, your key for it, and your model ID. Never print or send these values anywhere.
+   ```sh
+   cd ~/vodclips && umask 077
+   age -d -i ~/.ssh/<your private key> vodclips/secrets.env.age > .env
+   cat >> .env <<'ENV'
+   VODCLIPS_CHANNEL=clavicular
+   HOOKS_BASE_URL=<your provider's OpenAI-compatible base URL>
+   HOOKS_API_KEY=<your provider key>
+   HOOKS_MODEL=<your model id>
+   ENV
+   sed 's/=.*/=<set>/' .env   # names only
+   ```
+4. **Build, smoke-test, run.** The build takes about 15-25 min on this box.
+   ```sh
+   podman build -f vodclips/Dockerfile -t localhost/vodclips .
+   podman run --rm localhost/vodclips --channel clavicular --once --data /tmp/vodclips-smoke   # expect "N existing VODs marked seen"
+   podman run -d --name vodclips --restart=unless-stopped --env-file .env -v vodclips-data:/data localhost/vodclips --channel clavicular
+   podman logs vodclips
+   ```
+5. **Keep it running across reboots:** check `loginctl show-user hermes -p Linger`. If it says `no`, ask the owner to run `sudo loginctl enable-linger hermes`.
+6. **Report back** to the owner: the container status and the last log lines. A container named `vodclips` may also be running under the `alex` account. The owner will remove it once yours is up, so the two don't watch the same channel.
+
+The clips land in the `vodclips-data` volume, under `/data/<channel>/<vod id>/out/`. The container only renders. Nothing is posted anywhere.
+
 ## Where the questions come from
 
 The questions are reverse-engineered from Clavicular's own Instagram: 360 reels with play counts, about 95 of them transcribed. The notes and data are in [research-clavicular-instagram.md](research-clavicular-instagram.md). The short version:
