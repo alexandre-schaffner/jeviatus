@@ -97,6 +97,7 @@ export interface StreamConfig {
   lab: {
     everyGames: number;
     gamesPerBuild: number;
+    stepBackEvery: number;
     maxMinutes: number;
     model: string | null;
     prs: boolean;
@@ -243,6 +244,7 @@ export function loadStreamConfig(): StreamConfig {
       ? {
           everyGames: num("STREAM_LAB_EVERY_GAMES", 2),
           gamesPerBuild: num("STREAM_LAB_GAMES_PER_BUILD", 4),
+          stepBackEvery: num("STREAM_LAB_STEP_BACK_EVERY", 4),
           maxMinutes: num("STREAM_LAB_MAX_MINUTES", 12),
           model: process.env.STREAM_LAB_MODEL?.trim() || null,
           prs: bool("STREAM_LAB_PRS", false),

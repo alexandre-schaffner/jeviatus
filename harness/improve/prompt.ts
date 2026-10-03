@@ -26,7 +26,15 @@ In the proposal, add a "Grounding" section with 1 to 4 citations, one per line, 
 Copy each quote verbatim, at least 20 characters. The loop checks every quote against the cited text and drops a change with no citation or with any citation that doesn't check out. Explain under the citations how they support the change.`;
 }
 
-export function changePrompt(opts: { games: number; commit: string; past: PastAttempt[]; references?: string }): string {
+// A step back: look at the loop's changes as a whole before adding another.
+function stepBackText(): string {
+  return `This session is a step back. Before hunting for the next fix, look at Jev as a whole:
+- run \`git log\` and \`git show\` on the commits since "Jev's lab: baseline" to see every change this loop kept, and what each was meant to fix;
+- read the decision code end to end, and check the report: are the patterns those changes targeted actually gone?
+Then make the one change that most improves the whole: revert or remove a kept change that doesn't pull its weight, merge guards and hints that overlap or contradict, simplify a part that grew tangled, or replace an approach that keeps failing with a different one. A step back that deletes code is as welcome as one that adds it.`;
+}
+
+export function changePrompt(opts: { games: number; commit: string; past: PastAttempt[]; references?: string; sandboxed?: boolean; stepBack?: boolean }): string {
   const past = opts.past.length
     ? opts.past.map((p) => `- ${p.title}: ${p.verdict}`).join("\n")
     : "- none yet";
@@ -44,17 +52,23 @@ How Jev decides (a map, not a fence):
 - harness/strategy/stage.ts splits the game into early, mid and late (\`game.stage\`; each moment's decision line names it). Hints that only hold at one stage go in that stage's \`forStage\` list in questions.ts; harness/decide/playbook.ts holds the per-stage troop reserve and the structures not offered yet.
 - harness/agent.ts runs the step loop (cadence, memory, sending intents); extension/ runs the agent inside the real openfront.io page.
 
-Your task: pick the ONE recurring bad pattern with the strongest evidence, confirm it in the moment dumps, and make the change you believe fixes it best. Nothing is off the table: a hint, a state field, a guard, a new question layer, a rewritten pipeline, a new module, a different agent loop, a change to how the extension acts in the page. Pick what the evidence calls for, not what is smallest.
+${opts.stepBack ? `${stepBackText()}\n` : "Your task: pick the ONE recurring bad pattern with the strongest evidence, confirm it in the moment dumps, and make the change you believe fixes it best. "}Nothing is off the table: a hint, a state field, a guard, a new question layer, a rewritten pipeline, a new module, a different agent loop, a change to how the extension acts in the page, or undoing an earlier change that the evidence says hurts. Pick what the evidence calls for, not what is smallest.
 
 Rules:
 - You may change any file in the repo except ${OFF_LIMITS.join(" and ")} (OpenFront itself, pinned to the commit the live server runs). Match the surrounding style and comment density.
 - Only code the extension bundles (${LIVE_PATHS.join(", ")}) plays in the next games, and those games are what judge your change. Edits elsewhere are fine when the change needs them, but they are not measured.
-- One idea per change, however large: the next games judge it as a whole, so unrelated fixes muddy the verdict.
-- No new dependencies: package installs don't reach the live build.
+- Size and scope are yours to choose. The next games judge everything you change as one verdict, so unrelated fixes muddy it.
+${
+  opts.sandboxed
+    ? `- You have a full shell, sandboxed: it writes only inside this worktree, reads the repo and OpenFront, and reaches only the npm registry. Run whatever helps: scripts, the analyzer, throwaway experiments, \`git log\`, \`git show\`, \`git blame\`.
+- You may add packages with \`bun add\`: they ship with the build.
+- Don't commit, reset or switch branches: the lab commits your change itself.`
+    : `- No new dependencies: package installs don't reach the live build.
+- Do not commit. Do not touch git.`
+}
 - New or changed logic in code needs a test in tests/.
 - Run \`bun run typecheck\`, \`bun test tests/*.test.ts\` and \`bun run build:extension\`; all three must pass.
-- Do not commit. Do not touch git.
-- Do not repeat an idea that was already tried and did not help.
+- Don't repeat an idea that was tried and did not help, unless you can say what is different this time.
 ${opts.references ? `\n${groundingRules(opts.references)}\n` : ""}
 Already tried in this loop:
 ${past}

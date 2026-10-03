@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 import type { GameRecord } from "../harness/analyze/load";
 import { comparisonMarkdown, gamesFor, isBetter, measure, offLimits } from "../harness/improve/measure";
 import { changePrompt, parseProposal } from "../harness/improve/prompt";
+import { sandboxSettings } from "../stream/lab";
 
 const A = "a".repeat(40);
 const B = "b".repeat(40);
@@ -57,6 +58,30 @@ describe("comparing builds", () => {
 test("the LLM may touch anything but OpenFront itself", () => {
   expect(offLimits(["harness/decide/questions.ts", "harness/agent.ts", "extension/src/content.ts", "package.json", "stream/lab.ts"])).toEqual([]);
   expect(offLimits(["vendor/OpenFrontIO", "vendor/OpenFrontIO/src/core/game/Game.ts", ".gitmodules", "vendorPatches.ts"])).toEqual(["vendor/OpenFrontIO", "vendor/OpenFrontIO/src/core/game/Game.ts", ".gitmodules"]);
+});
+
+test("the lab's shell is sandboxed: worktree writes, OpenFront read-only, npm only, no way out", () => {
+  const s = sandboxSettings({ worktree: "/data/lab/worktree", vendor: "/repo/vendor/OpenFrontIO", gitDir: "/repo/.git" }) as {
+    sandbox: { enabled: boolean; failIfUnavailable: boolean; allowUnsandboxedCommands: boolean; filesystem: Record<string, string[]>; network: { allowedDomains: string[]; strictAllowlist: boolean } };
+    permissions: { deny: string[] };
+  };
+  expect(s.sandbox).toMatchObject({ enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false });
+  expect(s.sandbox.filesystem.denyRead).toEqual(["~/"]);
+  expect(s.sandbox.filesystem.allowRead).toContain("/data/lab/worktree");
+  expect(s.sandbox.filesystem.denyWrite).toContain("/repo/vendor/OpenFrontIO");
+  expect(s.sandbox.filesystem.denyWrite).toContain("/repo/.git/refs/heads");
+  expect(s.sandbox.network).toEqual({ allowedDomains: ["registry.npmjs.org"], strictAllowlist: true });
+  expect(s.permissions.deny).toContain("Edit(//repo/vendor/OpenFrontIO/**)");
+});
+
+test("a step back asks to rethink the kept changes, and may delete them", () => {
+  const normal = changePrompt({ games: 4, commit: A, past: [], sandboxed: true });
+  const back = changePrompt({ games: 4, commit: A, past: [], sandboxed: true, stepBack: true });
+  expect(normal).not.toContain("step back");
+  expect(back).toContain("This session is a step back");
+  expect(back).toContain("revert or remove a kept change");
+  expect(back).toContain("bun add");
+  expect(changePrompt({ games: 4, commit: A, past: [] })).toContain("No new dependencies");
 });
 
 describe("the proposal", () => {

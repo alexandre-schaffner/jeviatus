@@ -417,6 +417,7 @@ const lab =
           extensionDir,
           gamesPerBuild: cfg.lab.gamesPerBuild,
           everyGames: cfg.lab.everyGames,
+          stepBackEvery: cfg.lab.stepBackEvery,
           maxMinutes: cfg.lab.maxMinutes,
           model: cfg.lab.model,
           prs: cfg.lab.prs,

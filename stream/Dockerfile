@@ -9,10 +9,11 @@ RUN test -n "$OPENFRONT_COMMIT" || { echo "build with --build-arg OPENFRONT_COMM
 
 ENV DEBIAN_FRONTEND=noninteractive
 # Debian's ffmpeg has everything stream/encoder.ts uses: x11grab, pulse,
-# drawtext (freetype), libx264, tee and segment.
+# drawtext (freetype), libx264, tee and segment. bubblewrap and socat are
+# Claude Code's sandbox on Linux: the lab's shell runs in it (stream/lab.ts).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      chromium xvfb xdotool pulseaudio pulseaudio-utils ffmpeg git ca-certificates tini procps \
+      chromium xvfb xdotool pulseaudio pulseaudio-utils ffmpeg git ca-certificates tini procps bubblewrap socat \
       fonts-dejavu-core fonts-liberation fonts-noto-color-emoji fonts-noto-cjk \
       libgl1-mesa-dri libegl1 libegl-mesa0 libgles2 \
  && rm -rf /var/lib/apt/lists/* \

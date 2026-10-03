@@ -39,6 +39,8 @@ export interface LabOptions {
   gamesPerBuild: number;
   // A session every this many games (for the band's "next session").
   everyGames: number;
+  // Every this many changes, a step back: rethink the kept changes as a whole (0: never).
+  stepBackEvery: number;
   maxMinutes: number;
   model: string | null;
   prs: boolean;
@@ -76,9 +78,37 @@ interface LabState {
 // The lab's commits are machine-made and local: never signed.
 const UNSIGNED = ["-c", "commit.gpgsign=false"];
 
-// Claude Code's tools: read and edit, run typecheck, tests and the extension
-// build, look at git. Nothing else.
-const TOOLS = "Read,Edit,Write,Glob,Grep,Bash(bun run typecheck),Bash(bun test:*),Bash(bun run build:extension),Bash(git diff:*),Bash(git status:*)";
+// Claude Code's tools: all of them. What fences it in is the sandbox below,
+// not the tool list. The file tools are left off on purpose: listed bare they
+// would reach the whole disk, unlisted they keep to the worktree (and read
+// OpenFront), which acceptEdits allows without asking.
+const TOOLS = "Bash,WebFetch,WebSearch,Agent,TodoWrite";
+
+// Every shell command runs in Claude Code's OS sandbox, with no way out: it
+// writes only in the worktree (and bun's package cache), reads only the
+// worktree, OpenFront, git and bun, and reaches only the npm registry. So
+// nothing it runs can see the stream's .env, the Kick key, SSH or GitHub
+// logins, or push anywhere. The file tools stay in the worktree too (they
+// can't leave it headless), and OpenFront is read-only.
+export function sandboxSettings(o: { worktree: string; vendor: string; gitDir: string }): Record<string, unknown> {
+  return {
+    sandbox: {
+      enabled: true,
+      failIfUnavailable: true,
+      allowUnsandboxedCommands: false,
+      autoAllowBashIfSandboxed: true,
+      filesystem: {
+        denyRead: ["~/"],
+        allowRead: [o.worktree, o.vendor, o.gitDir, "~/.bun"],
+        allowWrite: ["~/.bun/install/cache"],
+        // Branches and tags belong to the lab: Claude Code's commits, if any, stay on the worktree's own HEAD.
+        denyWrite: [o.vendor, ...["refs/heads", "refs/tags", "refs/remotes", "packed-refs"].map((r) => path.join(o.gitDir, r))],
+      },
+      network: { allowedDomains: ["registry.npmjs.org"], strictAllowlist: true },
+    },
+    permissions: { deny: [`Edit(/${o.vendor}/**)`, "Read(**/.env)", "Read(**/.env.*)"] },
+  };
+}
 // Never handed to Claude Code, whatever it runs.
 const SECRET_ENV = /KEY|TOKEN|SECRET|PASSWORD|STREAM_URL|WALLET|MINT/i;
 
@@ -229,7 +259,7 @@ export class Lab {
     if (fs.existsSync(path.join(this.wt, ".git")) && (await this.sh(["git", "rev-parse", "--git-dir"], { cwd: this.wt, allowFail: true })).ok) return;
     fs.rmSync(this.wt, { recursive: true, force: true });
     await this.sh(["git", "worktree", "add", "--detach", this.wt, "HEAD"]);
-    this.link();
+    await this.link();
   }
 
   // Builds whose commits this repository doesn't have (the lab's commits
@@ -246,25 +276,29 @@ export class Lab {
     this.save();
   }
 
-  // The worktree shares this checkout's dependencies and OpenFront. A checkout
-  // turns the submodule path back into an empty folder, so this runs after each.
-  // A link into another checkout (the stream moved, or that checkout is gone)
-  // is pointed back at this one.
-  private link(): void {
-    for (const rel of ["vendor/OpenFrontIO", "node_modules"]) {
-      const at = path.join(this.wt, rel);
-      const target = path.join(this.o.repo, rel);
-      const st = fs.lstatSync(at, { throwIfNoEntry: false });
-      if (st?.isSymbolicLink() && fs.readlinkSync(at) === target) continue;
+  // The worktree shares this checkout's OpenFront. A checkout turns the
+  // submodule path back into an empty folder, so this runs after each. A link
+  // into another checkout (the stream moved, or that checkout is gone) is
+  // pointed back at this one. Its packages are its own, installed from the
+  // commit's lockfile: a change may add some, and its build needs them.
+  private async link(): Promise<void> {
+    const at = path.join(this.wt, "vendor/OpenFrontIO");
+    const target = path.join(this.o.repo, "vendor/OpenFrontIO");
+    const st = fs.lstatSync(at, { throwIfNoEntry: false });
+    if (!(st?.isSymbolicLink() && fs.readlinkSync(at) === target)) {
       if (st?.isDirectory() && fs.readdirSync(at).length > 0) throw new Error(`${at} is a real folder; not replacing it`);
       fs.rmSync(at, { recursive: true, force: true });
       fs.symlinkSync(target, at);
     }
+    // Earlier labs linked this checkout's node_modules in.
+    const modules = path.join(this.wt, "node_modules");
+    if (fs.lstatSync(modules, { throwIfNoEntry: false })?.isSymbolicLink()) fs.rmSync(modules);
+    await this.sh(["bun", "install"], { cwd: this.wt });
   }
 
   private async checkout(sha: string): Promise<void> {
     await this.sh(["git", "checkout", "--quiet", "--force", "--detach", sha], { cwd: this.wt });
-    this.link();
+    await this.link();
   }
 
   // A commit of your working tree as it is (uncommitted and untracked work
@@ -426,12 +460,18 @@ export class Lab {
   }
 
   private async claude(prompt: string, resume: string | null): Promise<{ sessionId: string | null; ok: boolean }> {
-    const cmd = ["claude", "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--allowedTools", TOOLS];
+    // OpenFront's code is a symlink out of the worktree: let the file tools read it.
+    const vendor = fs.realpathSync(path.join(this.o.repo, "vendor", "OpenFrontIO"));
+    const gitDir = path.resolve(this.wt, (await this.sh(["git", "rev-parse", "--git-common-dir"], { cwd: this.wt })).out);
+    const settings = sandboxSettings({ worktree: fs.realpathSync(this.wt), vendor, gitDir });
+    const cmd = ["claude", "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--allowedTools", TOOLS, "--settings", JSON.stringify(settings)];
     if (this.o.model) cmd.push("--model", this.o.model);
     if (resume) cmd.push("--resume", resume);
-    // OpenFront's code is a symlink out of the worktree: let the file tools read it.
-    cmd.push("--add-dir", fs.realpathSync(path.join(this.o.repo, "vendor", "OpenFrontIO")));
-    const p = Bun.spawn(cmd, { cwd: this.wt, env: claudeEnv(), stdin: new Blob([prompt]), stdout: "pipe", stderr: "pipe" });
+    cmd.push("--add-dir", vendor);
+    const head = (await this.sh(["git", "rev-parse", "HEAD"], { cwd: this.wt })).out;
+    // Its git reads no global config: yours holds signing and credential helpers.
+    const env = { ...claudeEnv(), GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", XDG_CONFIG_HOME: path.join(this.wt, ANALYSIS_DIR, "..", "xdg") };
+    const p = Bun.spawn(cmd, { cwd: this.wt, env, stdin: new Blob([prompt]), stdout: "pipe", stderr: "pipe" });
     const timer = setTimeout(() => p.kill(), this.o.maxMinutes * 60_000);
     let sessionId: string | null = null;
     let buf = "";
@@ -454,12 +494,23 @@ export class Lab {
     }
     clearTimeout(timer);
     const code = await p.exited;
+    // Commits it made anyway come back as working-tree changes: the lab commits.
+    if ((await this.sh(["git", "rev-parse", "HEAD"], { cwd: this.wt })).out !== head) {
+      await this.sh(["git", "reset", "--soft", head], { cwd: this.wt });
+      await this.sh(["git", "checkout", "--quiet", "--detach"], { cwd: this.wt, allowFail: true });
+    }
     if (code !== 0) this.d.studio.line("err", `claude exited ${code}: ${(await new Response(p.stderr).text()).trim().split("\n").at(-1) ?? ""}`);
     return { sessionId, ok: code === 0 };
   }
 
   private async verify(): Promise<{ ok: boolean; out: string }> {
     const { studio } = this.d;
+    // It may have added packages.
+    const installed = await this.sh(["bun", "install"], { cwd: this.wt, allowFail: true });
+    if (!installed.ok) {
+      studio.line("err", "  bun install failed");
+      return installed;
+    }
     studio.line("tool", "$ bun run typecheck");
     const tc = await this.sh(["bun", "run", "typecheck"], { cwd: this.wt, allowFail: true });
     if (!tc.ok) {
@@ -489,7 +540,7 @@ export class Lab {
   private async discard(): Promise<void> {
     await this.sh(["git", "checkout", "--quiet", "--force", "--", "."], { cwd: this.wt, allowFail: true });
     await this.sh(["git", "clean", "-fdq", "--", ".", ":!vendor", ":!node_modules"], { cwd: this.wt, allowFail: true });
-    this.link();
+    await this.link();
   }
 
   // Checks the proposal's citations and shows them on screen.
@@ -508,8 +559,9 @@ export class Lab {
     const s = this.state;
     const n = ++s.changes;
     this.save();
+    const stepBack = this.o.stepBackEvery > 0 && n % this.o.stepBackEvery === 0;
     studio.step(2, "active");
-    this.d.band("LIVE CODING: Claude Code is writing a change to Jev's brain");
+    this.d.band(stepBack ? "LIVE CODING: Claude Code steps back and rethinks Jev's brain as a whole" : "LIVE CODING: Claude Code is writing a change to Jev's brain");
     await this.checkout(from.sha);
     await this.discard();
     // The same analysis files the improve loop hands Claude Code.
@@ -521,9 +573,9 @@ export class Lab {
     fs.writeFileSync(path.join(dir, "report.md"), renderReport(report));
     // What the change must be grounded in, besides OpenFront's code.
     if (fs.existsSync(this.o.references)) fs.cpSync(this.o.references, path.join(this.wt, REFERENCES_DIR), { recursive: true });
-    studio.line("head", `Change ${n}: Claude Code, from ${games.length} games on ${from.sha.slice(0, 7)}`);
+    studio.line("head", `Change ${n}${stepBack ? " (a step back)" : ""}: Claude Code, from ${games.length} games on ${from.sha.slice(0, 7)}`);
 
-    let run = await this.claude(changePrompt({ games: games.length, commit: from.sha, past: s.attempts, references: REFERENCES_DIR }), null);
+    let run = await this.claude(changePrompt({ games: games.length, commit: from.sha, past: s.attempts, references: REFERENCES_DIR, sandboxed: true, stepBack }), null);
     studio.step(2, run.ok ? "done" : "fail");
     studio.step(3, "active");
     let check = await this.verify();

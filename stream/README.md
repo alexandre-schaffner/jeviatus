@@ -65,7 +65,9 @@ Every 2 games (`STREAM_LAB_EVERY_GAMES`), the stream cuts to Jev's lab. That's a
 1. Analyze the recent games (the same report as `bun run analyze`).
 2. Once the build under test has 4 games of its own (`STREAM_LAB_GAMES_PER_BUILD`), judge it against the build before it. A better build becomes the new baseline; a worse one is dropped.
 3. Ask Claude Code (`claude -p`) for one change to Jev, anywhere in the repo but the vendored OpenFront. Viewers watch it read the analysis and the code, and see its edits as diffs.
-4. Typecheck and test it, and check its grounding (below), with one fix-up round if either fails.
+4. Install its packages, typecheck, test and build it, and check its grounding (below), with one fix-up round if either fails.
+
+**Every few changes, a step back** (every 4th, `STREAM_LAB_STEP_BACK_EVERY`; 0 turns it off). Instead of hunting the next fix, Claude Code reviews the changes the lab has kept so far against the report. Then it may revert one that doesn't pull its weight, merge hints and guards that overlap, simplify, or replace an approach that keeps failing. The next games judge that like any other change.
 5. Commit it on a local `jev-lab/…` branch, build the extension from it, and restart the browser, so the next games play on it.
 
 **Grounded changes only.** Claude Code may only change Jev's strategy on evidence of how OpenFront works:
@@ -77,7 +79,7 @@ The wikis and subreddit are saved as text in `<data>/lab/references`, refreshed 
 
 The commentator narrates each step. Everything happens in a worktree of its own, `<data>/lab/worktree`, never in your checkout. The first session takes a snapshot of your working tree, uncommitted work included, as the baseline, without touching your index or branches. The lab's progress is kept in `<data>/lab/state.json`, so a restart picks up where it left off.
 
-- **Safety:** Claude Code gets the improve loop's narrow tools: read and edit files, typecheck, run the tests, `git diff`/`git status`. It may only change `harness/decide|observe|strategy|act` and `tests/`. It runs without any `*KEY*`/`*TOKEN*`/stream variables in its environment, and the lab screen masks any secret value that shows up anyway.
+- **Freedom and its fence:** Claude Code may change any file but `vendor/` (OpenFront must match the live server), add packages with `bun add`, and run any shell command. What fences it in is Claude Code's OS sandbox, with no unsandboxed fallback (`sandboxSettings` in `stream/lab.ts`). Its commands write only in the worktree and bun's cache. They read only the worktree, OpenFront, git and bun, never the rest of your home folder (no `.env`, SSH keys or GitHub logins). They reach only the npm registry. Its file tools stay in the worktree, and OpenFront is read-only. Its git reads no global config, can't move branches or tags, and any commit it makes is undone into working-tree changes for the lab to commit. It runs without any `*KEY*`/`*TOKEN*`/stream variables in its environment, and the lab screen masks any secret value that shows up anyway.
 - **Pull requests:** with `STREAM_LAB_PRS=true` and a clean, pushed branch, each change also becomes a PR, and its verdict is posted there.
 - **Cost:** each change is one Claude Code run, typically a few minutes. On a Mac it uses your `claude` login. The container has Claude Code but no login of its own: set `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`, uses your Claude plan) or `LAB_ANTHROPIC_API_KEY` (billed per token) in `.env`. Only the `claude` process gets it ([deploy/README.md](../deploy/README.md#claude-code-for-the-lab)).
 - **Redeploys:** in the container, the lab's commits live in the image's copy of the repository. After a redeploy the lab starts over from a new baseline.
@@ -143,6 +145,7 @@ The extension must be built from the exact commit openfront.io runs (see `extens
 | `STREAM_LAB_EVERY_GAMES` / `STREAM_LAB_GAMES_PER_BUILD` | 2 / 4 | A session every N games; a change is judged after this many games on it. |
 | `STREAM_LAB_MAX_MINUTES` / `STREAM_LAB_MODEL` | 12 / Claude Code's default | Time limit and model for each Claude Code run. |
 | `STREAM_LAB_PRS` | false | Push each change and open a PR (needs a clean, pushed branch). |
+| `STREAM_LAB_STEP_BACK_EVERY` | 4 | Every Nth change is a step back: rethink the kept changes as a whole. 0 turns it off. |
 | `CLAUDE_CODE_OAUTH_TOKEN` / `LAB_ANTHROPIC_API_KEY` | unset | Claude Code's login for the lab in the container. The token wins if both are set. |
 | `STREAM_PROXY` | unset | The browser's proxy (`http://host:port`, `socks5://host:port`), for when Cloudflare challenges the server's IP ([deploy/README.md](../deploy/README.md#cloudflare-turnstile)). |
 | `MUSIC` / `MUSIC_DIR` / `MUSIC_VOLUME` | true / `<data>/music` / 0.22 | Background music ([Music](#music)). |
