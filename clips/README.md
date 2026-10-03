@@ -34,6 +34,7 @@ bun run clips --dry-run --no-jev            # what it would render
 bun run clips:start --env-from /path/to/.env   # the watcher, detached: a pass every 20 min
 bun run clips:stop
 sh clips/watch-daemon.sh status
+bun run clips --refresh-text                # after editing clips/metadata.ts: rewrite every sidecar's post text, no render
 ```
 
 What a pass does:

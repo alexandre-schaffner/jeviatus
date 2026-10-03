@@ -143,6 +143,6 @@ Kick's public API (docs.kick.com) has **no clip endpoints**: no creating or list
 
 ## Content notes
 
-- Every post says Jev is an AI. Keep it that way: platforms and subreddits treat undisclosed automation as spam.
+- Every post says it's Jev playing, TypeSafe's System One model, and what that means: it answers typed questions about the game with probabilities, it doesn't chat or write text. Keep it that way: viewers otherwise picture a chatbot, and platforms and subreddits treat undisclosed automation as spam.
 - The gameplay is real footage, so `is_aigc` (TikTok) and `containsSyntheticMedia` (YouTube) are off. The AI plays the game; it doesn't generate the images.
 - Most players Jev "wipes out" are OpenFront's built-in nations, not people. The post text says what happened ("Jev wiped X off the map") and never claims the victim was a human.
